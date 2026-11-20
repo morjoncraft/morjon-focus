@@ -8,12 +8,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import {
-  getSupabaseClient,
-  getSupabaseConfig,
-  isSupabaseConfigured,
-  setRuntimeSupabaseConfig,
-} from '../lib/supabase';
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 import { useFocusStore } from '../store/useFocusStore';
 
 interface AuthModalProps {
@@ -31,34 +26,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
   const lastSyncedAt = useFocusStore((s) => s.lastSyncedAt);
   const triggerManualSync = useFocusStore((s) => s.triggerManualSync);
   const handleAuthUserChange = useFocusStore((s) => s.handleAuthUserChange);
+  const signOutUser = useFocusStore((s) => s.signOutUser);
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [clearOnSignOut, setClearOnSignOut] = useState(true);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-
-  const cfg = getSupabaseConfig();
-  const [showConfigOverride, setShowConfigOverride] = useState(!isSupabaseConfigured());
-  const [sbUrl, setSbUrl] = useState(cfg.url);
-  const [sbKey, setSbKey] = useState(cfg.anonKey);
 
   if (!open) return null;
 
   const isTr = lang === 'tr';
   const configured = isSupabaseConfigured();
 
-  const handleSaveRuntimeConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    setRuntimeSupabaseConfig(sbUrl, sbKey);
-    setMessage({
-      type: 'ok',
-      text: isTr
-        ? 'Supabase bağlantı bilgileri kaydedildi. Şimdi giriş yapabilirsin.'
-        : 'Supabase configuration saved. You can sign in now.',
-    });
-    setShowConfigOverride(false);
-  };
+  const statusLabel = (() => {
+    switch (syncStatus) {
+      case 'synced':
+        return isTr ? 'Buluta kaydedildi' : 'Synced';
+      case 'syncing':
+        return isTr ? 'Senkronize ediliyor...' : 'Syncing...';
+      case 'offline':
+        return isTr ? 'Çevrimdışı' : 'Offline';
+      case 'error':
+        return isTr ? 'Hata' : 'Error';
+      default:
+        return isTr ? 'Lokal Mod' : 'Guest';
+    }
+  })();
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,8 +62,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
       setMessage({
         type: 'err',
         text: isTr
-          ? 'Önce .env dosyasına veya aşağıya Supabase URL ve Anon Key girin.'
-          : 'Please enter your Supabase URL and Anon Key below or in .env first.',
+          ? 'Bulut senkronizasyonu şu an yapılandırılmamış (.env içinde VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY gerekli).'
+          : 'Cloud sync is not configured yet (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required in .env).',
       });
       return;
     }
@@ -86,8 +81,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
         setMessage({
           type: 'ok',
           text: isTr
-            ? 'Magic Link e-posta adresine gönderildi!'
-            : 'Magic Link sent to your email!',
+            ? 'Magic Link e-posta adresine gönderildi! Gelen kutundaki bağlantıya tıklayarak giriş yapabilirsin.'
+            : 'Magic Link sent! Check your inbox and click the link to sign in.',
         });
       } else if (mode === 'signup') {
         const { data, error } = await supabase.auth.signUp({
@@ -144,7 +139,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
     if (supabase) {
       await supabase.auth.signOut();
     }
-    await handleAuthUserChange(null);
+    signOutUser(clearOnSignOut);
     onClose();
   };
 
@@ -195,7 +190,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
                   {isTr ? 'Durum:' : 'Status:'}
                 </span>
                 <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                  {syncStatus}
+                  {statusLabel}
                 </span>
               </div>
               {lastSyncedAt && (
@@ -210,6 +205,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
               )}
               {syncError && <p className="pt-1 text-rose-500">{syncError}</p>}
             </div>
+
+            <label className="flex items-start gap-2 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-2.5 text-[11px] text-zinc-600 dark:text-zinc-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={clearOnSignOut}
+                onChange={(e) => setClearOnSignOut(e.target.checked)}
+                className="mt-0.5 rounded accent-violet-600"
+              />
+              <span>
+                {isTr
+                  ? 'Çıkış yaparken bu cihazdaki lokal verileri temizle (ortak bilgisayarlar ve hesap değişimi için önerilir)'
+                  : 'Clear local data on this device when signing out (recommended for shared computers and switching accounts)'}
+              </span>
+            </label>
 
             <div className="flex items-center gap-2">
               <button
@@ -261,13 +270,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
             {!configured && (
               <div className="rounded-xl border border-amber-300/60 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs text-amber-800 dark:text-amber-200">
                 <p className="font-semibold">
-                  {isTr ? 'Supabase yapılandırması eksik' : 'Supabase not configured yet'}
+                  {isTr ? 'Bulut senkronizasyonu aktif değil' : 'Cloud sync is not configured'}
                 </p>
                 <p className="mt-0.5 text-[11px] opacity-90">
                   {isTr
-                    ? '.env dosyanıza VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY ekleyin veya aşağıdan girin. Misafir Modu bu sırada tamamen çalışır.'
-                    : 'Add VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY in .env or enter them below. Guest Mode works offline right away.'}
+                    ? 'Bulut senkronizasyonu için .env dosyasına Supabase bilgilerini ekleyip sunucuyu yeniden başlatın. Misafir Modu bu sırada tamamen çalışır.'
+                    : 'Add your Supabase env variables to .env and restart the dev server to enable cloud sync. Guest Mode works offline right away.'}
                 </p>
+              </div>
+            )}
+
+            {mode === 'magic' && (
+              <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-[11px] text-violet-700 dark:text-violet-200 leading-relaxed">
+                {isTr
+                  ? 'Şifresiz giriş: E-posta adresine tek kullanımlık güvenli bir giriş bağlantısı gönderilir; bağlantıya tıkladığında otomatik giriş yapılır.'
+                  : "Passwordless sign-in: We'll email you a secure one-time link that signs you in automatically when clicked."}
               </div>
             )}
 
@@ -283,7 +300,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
+                    placeholder={isTr ? 'ornek@eposta.com' : 'you@example.com'}
                     className="h-10 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                   />
                 </div>
@@ -344,47 +361,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
                         : 'Sign In & Sync'}
               </button>
             </form>
-
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-3">
-              <button
-                type="button"
-                onClick={() => setShowConfigOverride((v) => !v)}
-                className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-              >
-                {showConfigOverride
-                  ? isTr
-                    ? 'Supabase ayarlarını gizle'
-                    : 'Hide Supabase connection settings'
-                  : isTr
-                    ? 'Supabase URL / Anon Key düzenle'
-                    : 'Configure Supabase URL / Anon Key'}
-              </button>
-
-              {showConfigOverride && (
-                <form onSubmit={handleSaveRuntimeConfig} className="mt-2.5 space-y-2">
-                  <input
-                    type="url"
-                    value={sbUrl}
-                    onChange={(e) => setSbUrl(e.target.value)}
-                    placeholder="https://xxxx.supabase.co"
-                    className="h-8 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  />
-                  <input
-                    type="text"
-                    value={sbKey}
-                    onChange={(e) => setSbKey(e.target.value)}
-                    placeholder="Supabase Anon Key"
-                    className="h-8 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  />
-                  <button
-                    type="submit"
-                    className="h-8 rounded-lg bg-zinc-800 dark:bg-zinc-200 px-3 text-[11px] font-semibold text-white dark:text-zinc-900"
-                  >
-                    {isTr ? 'Kaydet' : 'Save Connection'}
-                  </button>
-                </form>
-              )}
-            </div>
           </div>
         )}
       </div>

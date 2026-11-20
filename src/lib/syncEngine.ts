@@ -2,6 +2,20 @@ import { isValidTaskColor } from './colors';
 import { getSupabaseClient } from './supabase';
 import type { Task, TaskColor, TaskList, TaskStatus } from '../types';
 
+export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function pruneExpiredTombstones<T extends { deleted_at: string | null }>(
+  items: T[],
+  nowMs = Date.now(),
+): T[] {
+  return items.filter((item) => {
+    if (!item.deleted_at) return true;
+    const deletedMs = Date.parse(item.deleted_at);
+    if (!Number.isFinite(deletedMs)) return true;
+    return nowMs - deletedMs < TOMBSTONE_TTL_MS;
+  });
+}
+
 interface CloudListRow {
   id: string;
   user_id: string;
@@ -122,13 +136,21 @@ export async function pushLocalSnapshotToCloud(
 ): Promise<string> {
   const supabase = getSupabaseClient();
   if (!supabase) {
-    throw new Error('Supabase yapılandırılmamış.');
+    throw new Error('Supabase is not configured.');
   }
 
+  // Strict user ownership guard & 30-day tombstone pruning
+  const ownedLists = pruneExpiredTombstones(lists).filter(
+    (l) => !l.user_id || l.user_id === userId,
+  );
+  const ownedTasks = pruneExpiredTombstones(tasks).filter(
+    (t) => !t.user_id || t.user_id === userId,
+  );
+
   // Filter out dangling tasks pointing to nonexistent lists to preserve FK integrity
-  const listIds = new Set(lists.map((l) => l.id));
-  const cleanLists = lists.map((l) => toCloudListRow(l, userId));
-  const cleanTasks = tasks
+  const listIds = new Set(ownedLists.map((l) => l.id));
+  const cleanLists = ownedLists.map((l) => toCloudListRow(l, userId));
+  const cleanTasks = ownedTasks
     .filter((t) => t.list_id === null || listIds.has(t.list_id))
     .map((t) => toCloudTaskRow(t, userId));
 
@@ -160,8 +182,16 @@ export async function mergeAndSyncWithCloud(
 }> {
   const supabase = getSupabaseClient();
   if (!supabase) {
-    throw new Error('Supabase yapılandırılmamış.');
+    throw new Error('Supabase is not configured.');
   }
+
+  // Strict user ownership guard on local items before merging
+  const safeLocalLists = pruneExpiredTombstones(localLists).filter(
+    (l) => !l.user_id || l.user_id === userId,
+  );
+  const safeLocalTasks = pruneExpiredTombstones(localTasks).filter(
+    (t) => !t.user_id || t.user_id === userId,
+  );
 
   const [{ data: cloudListRows, error: listsFetchError }, { data: cloudTaskRows, error: tasksFetchError }] =
     await Promise.all([
@@ -172,24 +202,22 @@ export async function mergeAndSyncWithCloud(
   if (listsFetchError) throw listsFetchError;
   if (tasksFetchError) throw tasksFetchError;
 
-  const cloudLists = ((cloudListRows ?? []) as CloudListRow[]).map(toTaskList);
-  const cloudTasks = ((cloudTaskRows ?? []) as CloudTaskRow[]).map(toTask);
+  const cloudLists = pruneExpiredTombstones(((cloudListRows ?? []) as CloudListRow[]).map(toTaskList));
+  const cloudTasks = pruneExpiredTombstones(((cloudTaskRows ?? []) as CloudTaskRow[]).map(toTask));
 
   // Case A: First-time cloud user -> upload local state (strip seed flags so they become real cloud records)
   if (cloudLists.length === 0 && cloudTasks.length === 0) {
-    const promotedLists = localLists.map((l) => ({ ...l, user_id: userId, is_seed: false }));
-    const promotedTasks = localTasks.map((t) => ({ ...t, user_id: userId, is_seed: false }));
+    const promotedLists = safeLocalLists.map((l) => ({ ...l, user_id: userId, is_seed: false }));
+    const promotedTasks = safeLocalTasks.map((t) => ({ ...t, user_id: userId, is_seed: false }));
     const syncedAt = await pushLocalSnapshotToCloud(userId, promotedLists, promotedTasks);
     return { lists: promotedLists, tasks: promotedTasks, syncedAt };
   }
 
   // Case B: Returning user signing in on a device that might have initial seed items.
-  // Remap non-seed local tasks that belong to an untouched seed list onto the matching cloud list,
-  // and drop untouched seed lists/tasks so default templates aren't duplicated across devices.
   const seedListRemap = new Map<string, string>();
   const activeCloudLists = cloudLists.filter((l) => !l.deleted_at);
 
-  for (const localList of localLists) {
+  for (const localList of safeLocalLists) {
     if (!localList.is_seed) continue;
     const match = activeCloudLists.find(
       (c) =>
@@ -206,11 +234,11 @@ export async function mergeAndSyncWithCloud(
     }
   }
 
-  const nonSeedLocalLists = localLists
+  const nonSeedLocalLists = safeLocalLists
     .filter((l) => !l.is_seed)
     .map((l) => ({ ...l, user_id: userId }));
 
-  const nonSeedLocalTasks = localTasks
+  const nonSeedLocalTasks = safeLocalTasks
     .filter((t) => !t.is_seed)
     .map((t) => ({
       ...t,
@@ -238,15 +266,27 @@ export async function mergeAndSyncWithCloud(
     mergedTaskMap.set(lt.id, existing ? pickNewer(lt, existing) : lt);
   }
 
-  const mergedLists = Array.from(mergedListMap.values()).sort(
+  const mergedLists = pruneExpiredTombstones(Array.from(mergedListMap.values())).sort(
     (a, b) => a.sort_order - b.sort_order,
   );
   const validListIds = new Set(mergedLists.map((l) => l.id));
-  const mergedTasks = Array.from(mergedTaskMap.values())
+  const mergedTasks = pruneExpiredTombstones(Array.from(mergedTaskMap.values()))
     .filter((t) => t.list_id === null || validListIds.has(t.list_id))
     .sort((a, b) => a.sort_order - b.sort_order);
 
   const syncedAt = await pushLocalSnapshotToCloud(userId, mergedLists, mergedTasks);
+
+  // Best-effort non-blocking cleanup of >30 day soft-deleted rows on Supabase
+  const cutoffIso = new Date(Date.now() - TOMBSTONE_TTL_MS).toISOString();
+  void (async () => {
+    try {
+      await supabase.from('tasks').delete().eq('user_id', userId).lt('deleted_at', cutoffIso);
+      await supabase.from('lists').delete().eq('user_id', userId).lt('deleted_at', cutoffIso);
+    } catch {
+      // non-fatal cleanup
+    }
+  })();
+
   return { lists: mergedLists, tasks: mergedTasks, syncedAt };
 }
 

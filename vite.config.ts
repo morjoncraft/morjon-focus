@@ -27,17 +27,17 @@ export default defineConfig({
         'icons/apple-touch-icon.png',
       ],
       manifest: {
-        name: 'Morjon Focus — Odak & Zaman Yönetimi',
+        name: 'Morjon Focus — Time-Boxing & Focus',
         short_name: 'Morjon Focus',
         description:
-          'Llama Life ilhamlı, yüksek odak odaklı (time-boxing) görev ve zaman yönetimi uygulaması.',
+          'High-focus time-boxing task manager with soundscapes, routines, and offline-first sync.',
         start_url: '/',
         scope: '/',
         display: 'standalone',
         display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
-        background_color: '#18181b',
-        theme_color: '#18181b',
-        lang: 'tr',
+        background_color: '#1e212a',
+        theme_color: '#1e212a',
+        lang: 'en',
         orientation: 'any',
         categories: ['productivity', 'utilities'],
         icons: [
@@ -68,7 +68,7 @@ export default defineConfig({
         skipWaiting: true,
       },
       devOptions: {
-        enabled: true,
+        enabled: false,
       },
     }),
   ],

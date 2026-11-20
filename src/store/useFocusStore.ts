@@ -12,7 +12,7 @@ import { getLocalDateKey } from '../lib/formatters';
 import { DEFAULT_SETTINGS } from '../lib/i18n';
 import { sendTimerFinishedNotification } from '../lib/notifications';
 import { suggestEmojiForTitle } from '../lib/parseTaskInput';
-import { mergeAndSyncWithCloud, syncScheduler } from '../lib/syncEngine';
+import { mergeAndSyncWithCloud, pruneExpiredTombstones, syncScheduler } from '../lib/syncEngine';
 import type {
   ActiveTab,
   BackupData,
@@ -283,6 +283,7 @@ export interface FocusState {
   setStoragePersisted: (persisted: boolean) => void;
   setNetworkOnline: (online: boolean) => void;
   handleAuthUserChange: (user: FocusUser | null) => Promise<void>;
+  signOutUser: (clearLocalWorkspace?: boolean) => void;
   triggerManualSync: () => Promise<void>;
   exportBackupJson: () => BackupData;
   importBackupJson: (data: BackupData, mode: 'merge' | 'replace') => void;
@@ -1470,8 +1471,11 @@ export const useFocusStore = create<FocusState>()(
         }
 
         try {
-          const { lists, tasks } = get();
-          const merged = await mergeAndSyncWithCloud(user.id, lists, tasks);
+          // Strict isolation: only merge local records belonging to guest (!user_id) or this user
+          const state = get();
+          const eligibleLists = state.lists.filter((l) => !l.user_id || l.user_id === user.id);
+          const eligibleTasks = state.tasks.filter((t) => !t.user_id || t.user_id === user.id);
+          const merged = await mergeAndSyncWithCloud(user.id, eligibleLists, eligibleTasks);
 
           const currentActive = get().activeListId;
           const regularLists = merged.lists.filter((l) => !l.deleted_at && !l.is_preset);
@@ -1496,6 +1500,84 @@ export const useFocusStore = create<FocusState>()(
             pendingSync: true,
           });
         }
+      },
+
+      signOutUser: (clearLocalWorkspace = true) => {
+        syncScheduler.cancel();
+        get().dismissAlarm();
+
+        if (clearLocalWorkspace) {
+          const freshSeed = createInitialSeedData();
+          set({
+            lists: freshSeed.lists,
+            tasks: freshSeed.tasks,
+            activeListId: freshSeed.activeListId,
+            dailyFocusSeconds: {},
+            activeTab: 'list',
+            isTimerRunning: false,
+            lastTickAt: null,
+            overtimeNotifiedTaskId: null,
+            user: null,
+            syncStatus: 'guest',
+            syncError: null,
+            lastSyncedAt: null,
+            pendingSync: false,
+          });
+        } else {
+          // Detach an offline guest copy with brand new UUIDs so it never collides with the cloud account
+          const state = get();
+          const now = new Date().toISOString();
+          const listIdMap = new Map<string, string>();
+          const detachedLists: TaskList[] = state.lists
+            .filter((l) => !l.deleted_at)
+            .map((l) => {
+              const newId = createUuid();
+              listIdMap.set(l.id, newId);
+              return {
+                ...l,
+                id: newId,
+                user_id: undefined,
+                updated_at: now,
+                is_seed: false,
+              };
+            });
+
+          const detachedTasks: Task[] = state.tasks
+            .filter((t) => !t.deleted_at)
+            .map((t) => ({
+              ...t,
+              id: createUuid(),
+              user_id: undefined,
+              list_id: t.list_id ? (listIdMap.get(t.list_id) ?? null) : null,
+              updated_at: now,
+              is_seed: false,
+            }));
+
+          const nextActive =
+            (state.activeListId && listIdMap.get(state.activeListId)) ??
+            detachedLists.find((l) => !l.is_preset)?.id ??
+            null;
+
+          set({
+            lists: detachedLists,
+            tasks: detachedTasks,
+            activeListId: nextActive,
+            isTimerRunning: false,
+            lastTickAt: null,
+            user: null,
+            syncStatus: 'guest',
+            syncError: null,
+            lastSyncedAt: null,
+            pendingSync: false,
+          });
+        }
+
+        syncAudioEnginePlayback(
+          get().soundscape,
+          get().soundVolume,
+          false,
+          get().settings.soundscapeOnlyWhenRunning,
+        );
       },
 
       triggerManualSync: async () => {
@@ -1690,6 +1772,12 @@ export const useFocusStore = create<FocusState>()(
         return {
           ...currentState,
           ...persisted,
+          lists: Array.isArray(persisted.lists)
+            ? pruneExpiredTombstones(persisted.lists)
+            : currentState.lists,
+          tasks: Array.isArray(persisted.tasks)
+            ? pruneExpiredTombstones(persisted.tasks)
+            : currentState.tasks,
           settings: {
             ...DEFAULT_SETTINGS,
             ...(persisted.settings ?? {}),

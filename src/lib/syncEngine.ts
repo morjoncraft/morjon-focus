@@ -93,32 +93,30 @@ export function diagnoseSyncError(
     /PGRST205|42P01|schema cache|does not exist|relation\s+"?public\.(lists|tasks)"?/i.test(errText)
   ) {
     return {
-      title: isTr
-        ? 'Supabase veritabanı tabloları (lists / tasks) bulunamadı'
-        : 'Supabase tables (lists / tasks) are missing',
+      title: isTr ? 'Bulut veritabanına erişilemedi' : 'Cloud storage unavailable',
       detail: isTr
-        ? 'Giriş (Auth) aktif ancak Supabase projenin veritabanında henüz lists ve tasks tabloları oluşturulmamış. Aşağıdaki butondan SQL kurulum kodunu kopyalayıp Supabase Dashboard → SQL Editor içine yapıştır ve Run butonuna bas.'
-        : 'Sign-in worked, but your Supabase project does not have the lists/tasks tables yet. Copy the setup SQL below and run it once inside Supabase Dashboard → SQL Editor.',
+        ? 'Bulut senkronizasyonu şu an tamamlanamadı. Biraz sonra tekrar dene; lokal verilerin güvende.'
+        : 'Cloud sync could not be completed right now. Please try again shortly; your local data is safe.',
       needsSchemaSql: true,
     };
   }
 
   if (/42501|row-level security|permission denied/i.test(errText)) {
     return {
-      title: isTr ? 'Yetkilendirme / RLS Politikası Hatası (42501)' : 'Row-Level Security Policy Error (42501)',
+      title: isTr ? 'Yetkilendirme Hatası' : 'Permission Error',
       detail: isTr
-        ? 'Supabase RLS politikası bu yazma işlemini reddetti. Hesabından çıkıp tekrar giriş yapmayı dene veya RLS politikalarının güncel olduğundan emin ol (SQL kurulumunu tekrar çalıştırabilirsin).'
-        : 'Supabase RLS rejected the write. Check that the RLS policies from supabase/schema.sql are applied and your session is active.',
+        ? 'Oturum izni doğrulanamadı. Hesabından çıkıp tekrar giriş yaparak yeniden dene.'
+        : 'Your session permission could not be verified. Please sign out and sign back in.',
       needsSchemaSql: true,
     };
   }
 
   if (/PGRST204|42703|column .* does not exist/i.test(errText)) {
     return {
-      title: isTr ? 'Eksik Veritabanı Kolonu' : 'Missing Table Column',
+      title: isTr ? 'Senkronizasyon Uyumsuzluğu' : 'Sync Schema Mismatch',
       detail: isTr
-        ? 'Uygulamanın yeni özellikleri (ör. subtasks veya scheduled_start) için Supabase SQL Editor üzerinden güncel kurulum SQL sorgusunu tekrar çalıştırman gerekiyor.'
-        : 'Re-run the latest setup SQL in Supabase SQL Editor to add newer columns safely.',
+        ? 'Bulut senkronizasyonu geçici olarak tamamlanamadı. Sayfayı yenileyip tekrar dene.'
+        : 'Cloud sync could not be completed. Please refresh the page and try again.',
       needsSchemaSql: true,
     };
   }

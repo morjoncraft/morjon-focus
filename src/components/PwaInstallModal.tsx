@@ -97,8 +97,8 @@ export const PwaInstallModal: React.FC<PwaInstallModalProps> = ({ open, onClose 
                   ? 'Hazır'
                   : 'Ready'
                 : isTr
-                  ? 'Sayfayı Yenile / Dev Server'
-                  : 'Reload / Restart Dev Server'}
+                  ? 'Sayfayı Yenile'
+                  : 'Refresh Page'}
             </span>
           </div>
 
@@ -153,8 +153,8 @@ export const PwaInstallModal: React.FC<PwaInstallModalProps> = ({ open, onClose 
           {!canInstallPrompt && !isStandalone && (
             <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
               {isTr
-                ? 'İpucu: Eğer "npm run dev" daha önceden açıktıysa terminali yeniden başlatıp sayfayı yenile; aksi halde Chrome adres çubuğundan "Sayfayı uygulama olarak yükle" her zaman çalışır.'
-                : 'Tip: If "npm run dev" was already running, restart it and refresh this page; otherwise Chrome/Edge menu → "Install page as app" always works.'}
+                ? 'İpucu: Adres çubuğunda kurulum ikonu görünmüyorsa tarayıcı menüsünden (⋮ / ⋯) "Uygulama olarak yükle" seçeneğini kullanabilirsin.'
+                : 'Tip: If the install icon does not appear in the address bar, use your browser menu (⋮ / ⋯) → "Install page as app".'}
             </div>
           )}
         </div>

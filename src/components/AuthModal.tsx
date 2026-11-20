@@ -1,10 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  Check,
   Cloud,
-  Copy,
-  Database,
   KeyRound,
   LogOut,
   Mail,
@@ -14,7 +11,6 @@ import {
 } from 'lucide-react';
 import { t } from '../lib/i18n';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
-import { SUPABASE_SCHEMA_SQL } from '../lib/supabaseSchemaSql';
 import { computeDeltaBatch, diagnoseSyncError } from '../lib/syncEngine';
 import { useFocusStore } from '../store/useFocusStore';
 
@@ -42,8 +38,6 @@ export const AccountCloudPanel: React.FC<AccountCloudPanelProps> = ({ onSuccessC
   const [password, setPassword] = useState('');
   const [clearOnSignOut, setClearOnSignOut] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [sqlCopied, setSqlCopied] = useState(false);
-  const [showSqlSection, setShowSqlSection] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const pendingDeltaCount = useMemo(() => {
@@ -59,16 +53,6 @@ export const AccountCloudPanel: React.FC<AccountCloudPanelProps> = ({ onSuccessC
 
   const isTr = lang === 'tr';
   const configured = isSupabaseConfigured();
-
-  const handleCopySql = async () => {
-    try {
-      await navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
-      setSqlCopied(true);
-      window.setTimeout(() => setSqlCopied(false), 3000);
-    } catch {
-      // ignore clipboard errors
-    }
-  };
 
   const statusLabel = (() => {
     switch (syncStatus) {
@@ -92,8 +76,8 @@ export const AccountCloudPanel: React.FC<AccountCloudPanelProps> = ({ onSuccessC
       setMessage({
         type: 'err',
         text: isTr
-          ? 'Bulut senkronizasyonu şu an yapılandırılmamış (.env içinde VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY gerekli).'
-          : 'Cloud sync is not configured yet (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required in .env).',
+          ? 'Bulut senkronizasyonu şu an kullanılamıyor. Misafir Modu ile tüm verilerin cihazında güvenle saklanır.'
+          : 'Cloud sync is currently unavailable. Your data stays safely stored locally on this device.',
       });
       return;
     }
@@ -234,7 +218,7 @@ export const AccountCloudPanel: React.FC<AccountCloudPanelProps> = ({ onSuccessC
         </div>
 
         {diagnostic && (
-          <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-3.5 text-xs space-y-2">
+          <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-3.5 text-xs space-y-1.5">
             <div className="flex items-start gap-2 text-rose-600 dark:text-rose-300 font-semibold">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{diagnostic.title}</span>
@@ -242,30 +226,6 @@ export const AccountCloudPanel: React.FC<AccountCloudPanelProps> = ({ onSuccessC
             <p className="text-[11px] text-rose-700 dark:text-rose-200/90 leading-relaxed">
               {diagnostic.detail}
             </p>
-            {syncError && (
-              <div className="rounded-lg bg-black/15 dark:bg-black/35 px-2.5 py-1.5 font-mono text-[10px] text-rose-700 dark:text-rose-200 break-all">
-                {syncError}
-              </div>
-            )}
-            {diagnostic.needsSchemaSql && (
-              <button
-                type="button"
-                onClick={() => void handleCopySql()}
-                className="w-full inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white transition"
-              >
-                {sqlCopied ? (
-                  <>
-                    <Check className="h-3.5 w-3.5" />
-                    <span>{t(lang, 'copiedSqlToast')}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5" />
-                    <span>{t(lang, 'copySqlBtn')}</span>
-                  </>
-                )}
-              </button>
-            )}
           </div>
         )}
 
@@ -300,36 +260,6 @@ export const AccountCloudPanel: React.FC<AccountCloudPanelProps> = ({ onSuccessC
             <LogOut className="h-3.5 w-3.5" />
             {isTr ? 'Çıkış Yap' : 'Sign Out'}
           </button>
-        </div>
-
-        <div className="border-t border-zinc-200/80 dark:border-zinc-800 pt-2">
-          <button
-            type="button"
-            onClick={() => setShowSqlSection((v) => !v)}
-            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-          >
-            <Database className="h-3 w-3" />
-            <span>
-              {isTr ? 'Veritabanı SQL Kurulumu (Supabase)' : 'Database SQL Setup (Supabase)'}
-            </span>
-          </button>
-          {showSqlSection && (
-            <div className="mt-2 space-y-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 p-3 text-[11px]">
-              <p className="text-zinc-500 dark:text-zinc-400">
-                {isTr
-                  ? 'Supabase Dashboard → SQL Editor içinde bir kez çalıştırarak lists/tasks tablolarını ve RLS politikalarını oluşturabilirsin.'
-                  : 'Run this once in Supabase Dashboard → SQL Editor to create the lists/tasks tables and RLS policies.'}
-              </p>
-              <button
-                type="button"
-                onClick={() => void handleCopySql()}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-[11px] font-semibold text-white dark:text-zinc-900"
-              >
-                {sqlCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                <span>{sqlCopied ? t(lang, 'copiedSqlToast') : t(lang, 'copySqlBtn')}</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -366,12 +296,12 @@ export const AccountCloudPanel: React.FC<AccountCloudPanelProps> = ({ onSuccessC
       {!configured && (
         <div className="rounded-xl border border-amber-300/60 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs text-amber-800 dark:text-amber-200">
           <p className="font-semibold">
-            {isTr ? 'Bulut senkronizasyonu aktif değil' : 'Cloud sync is not configured'}
+            {isTr ? 'Bulut senkronizasyonu şu an kapalı' : 'Cloud sync is currently unavailable'}
           </p>
           <p className="mt-0.5 text-[11px] opacity-90">
             {isTr
-              ? 'Bulut senkronizasyonu için .env dosyasına Supabase bilgilerini ekleyip sunucuyu yeniden başlatın. Misafir Modu bu sırada tamamen çalışır.'
-              : 'Add your Supabase env variables to .env and restart the dev server to enable cloud sync. Guest Mode works offline right away.'}
+              ? 'Misafir Modu ile tüm listelerin ve görevlerin cihazında çevrimdışı olarak güvenle saklanır.'
+              : 'Guest Mode keeps all your lists and tasks safely stored offline on this device.'}
           </p>
         </div>
       )}

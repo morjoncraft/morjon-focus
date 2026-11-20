@@ -168,3 +168,10 @@ CREATE POLICY "tasks_delete_own"
   FOR DELETE
   TO authenticated
   USING (auth.uid() = user_id);
+
+-- 6. TABLO ERİŞİM YETKİLERİ (GRANT)
+-- RLS politikaları satır bazlı erişimi kontrol eder; authenticated rolüne
+-- tablo seviyesinde erişim izni verilmesi gerekir.
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.lists TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.tasks TO authenticated;

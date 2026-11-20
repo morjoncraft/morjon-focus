@@ -358,8 +358,6 @@ const DICT = {
     distRangeAll: 'All Recorded',
     distEmpty: 'Start focusing on tasks to see your breakdown by list or color tag.',
     deltaSyncBadge: 'Delta Sync Active',
-    copySqlBtn: 'Copy Supabase Setup SQL',
-    copiedSqlToast: 'SQL copied! Paste into Supabase Dashboard → SQL Editor and run.',
     syncErrorTitle: 'Cloud Sync Error',
 
     // ADHD Simplified Mode, Color Wheel, Custom Sound & Hubs
@@ -707,8 +705,6 @@ const DICT = {
     distRangeAll: 'Tüm Kayıtlar',
     distEmpty: 'Liste veya renk dağılımını görmek için bir görevde odaklanmaya başla.',
     deltaSyncBadge: 'Artımlı (Delta) Senkronizasyon',
-    copySqlBtn: 'Supabase Kurulum SQL Kopyala',
-    copiedSqlToast: 'SQL kopyalandı! Supabase Dashboard → SQL Editor içine yapıştırıp Run butonuna bas.',
     syncErrorTitle: 'Bulut Senkronizasyon Hatası',
 
     // ADHD Simplified Mode, Color Wheel, Custom Sound & Hubs

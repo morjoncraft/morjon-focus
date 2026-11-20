@@ -35,6 +35,7 @@ export default defineConfig({
         scope: '/',
         display: 'standalone',
         display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+        edge_side_panel: { preferred_width: 400 },
         background_color: '#1e212a',
         theme_color: '#1e212a',
         lang: 'en',
@@ -68,7 +69,7 @@ export default defineConfig({
         skipWaiting: true,
       },
       devOptions: {
-        enabled: false,
+        enabled: true,
       },
     }),
   ],

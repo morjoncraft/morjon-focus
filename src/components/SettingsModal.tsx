@@ -7,6 +7,7 @@ import {
   Download,
   HardDrive,
   ListChecks,
+  MonitorDown,
   Upload,
   Volume2,
   X,
@@ -21,12 +22,14 @@ import {
   requestPersistentStorage,
   sendTimerFinishedNotification,
 } from '../lib/notifications';
+import { usePwaInstall } from '../lib/pwa';
 import { useFocusStore } from '../store/useFocusStore';
 import type { BackupData } from '../types';
 
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  onOpenPwa: () => void;
 }
 
 type SettingsTab = 'timer' | 'tasks' | 'alarms' | 'backup';
@@ -66,7 +69,12 @@ const ToggleSwitch: React.FC<{
   </button>
 );
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  open,
+  onClose,
+  onOpenPwa,
+}) => {
+  const { isStandalone } = usePwaInstall();
   const theme = useFocusStore((s) => s.theme);
   const setTheme = useFocusStore((s) => s.setTheme);
   const settings = useFocusStore((s) => s.settings);
@@ -352,6 +360,82 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
                   onChange={() => updateSettings({ enableOvertime: !settings.enableOvertime })}
                 />,
               )}
+
+              {/* Pomodoro Auto-Break Cycle */}
+              <div className="py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                      🍅 {t(lang, 'pomodoroAutoBreakTitle')}
+                    </div>
+                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                      {t(lang, 'pomodoroAutoBreakDesc')}
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={settings.pomodoroAutoBreak}
+                    onChange={() =>
+                      updateSettings({ pomodoroAutoBreak: !settings.pomodoroAutoBreak })
+                    }
+                  />
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <label className="flex flex-col gap-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-2.5">
+                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      {t(lang, 'shortBreakLabel')}
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={settings.shortBreakMinutes}
+                      onChange={(e) =>
+                        updateSettings({
+                          shortBreakMinutes: Math.max(1, Math.min(60, Number(e.target.value) || 5)),
+                        })
+                      }
+                      className="h-8 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 font-mono font-semibold"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-2.5">
+                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      {t(lang, 'longBreakLabel')}
+                    </span>
+                    <input
+                      type="number"
+                      min={5}
+                      max={90}
+                      value={settings.longBreakMinutes}
+                      onChange={(e) =>
+                        updateSettings({
+                          longBreakMinutes: Math.max(5, Math.min(90, Number(e.target.value) || 15)),
+                        })
+                      }
+                      className="h-8 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 font-mono font-semibold"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-2.5">
+                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      {t(lang, 'longBreakEveryLabel')}
+                    </span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={10}
+                      value={settings.longBreakInterval}
+                      onChange={(e) =>
+                        updateSettings({
+                          longBreakInterval: Math.max(2, Math.min(10, Number(e.target.value) || 4)),
+                        })
+                      }
+                      className="h-8 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 font-mono font-semibold"
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
           )}
 
@@ -666,6 +750,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
                       className="rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-violet-500"
                     >
                       {t(lang, 'allowNotifications')}
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800 pt-3">
+                  <span className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200 font-medium">
+                    <MonitorDown className="h-4 w-4 text-sky-500" />
+                    {lang === 'tr' ? 'Masaüstü Uygulaması (PWA)' : 'Desktop App (PWA)'}
+                  </span>
+                  {isStandalone ? (
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                      {t(lang, 'activeLabel')}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenPwa();
+                      }}
+                      className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500"
+                    >
+                      {t(lang, 'installApp')}
                     </button>
                   )}
                 </div>

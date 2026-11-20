@@ -3,12 +3,15 @@ import {
   Check,
   Clock,
   Inbox,
+  Maximize2,
   Minus,
   Pause,
+  PictureInPicture2,
   Play,
   Plus,
   RotateCcw,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { hexToRgba, normalizeHex } from '../lib/colors';
 import { fireTaskCompleteConfetti } from '../lib/confetti';
@@ -23,28 +26,41 @@ interface HeroTimerProps {
   activeTask: Task | null;
   onQuickApplyPreset?: () => void;
   onOpenCustomEmojiModal: (mode: 'create' | 'edit') => void;
+  onOpenPip: () => void;
 }
 
 export const HeroTimer: React.FC<HeroTimerProps> = ({
   activeTask,
   onQuickApplyPreset,
   onOpenCustomEmojiModal,
+  onOpenPip,
 }) => {
   const settings = useFocusStore((s) => s.settings);
   const theme = useFocusStore((s) => s.theme);
   const isTimerRunning = useFocusStore((s) => s.isTimerRunning);
+  const completedPomodoroCount = useFocusStore((s) => s.completedPomodoroCount);
+  const longBreakSuggestionPending = useFocusStore((s) => s.longBreakSuggestionPending);
 
   const toggleTimer = useFocusStore((s) => s.toggleTimer);
   const adjustTaskMinutes = useFocusStore((s) => s.adjustTaskMinutes);
   const completeTask = useFocusStore((s) => s.completeTask);
   const resetTaskTimer = useFocusStore((s) => s.resetTaskTimer);
   const moveToNotNow = useFocusStore((s) => s.moveToNotNow);
+  const deleteTask = useFocusStore((s) => s.deleteTask);
   const addOvertimeToTask = useFocusStore((s) => s.addOvertimeToTask);
   const cycleAccentColor = useFocusStore((s) => s.cycleAccentColor);
   const pickRandomTask = useFocusStore((s) => s.pickRandomTask);
+  const updateSettings = useFocusStore((s) => s.updateSettings);
+  const setZenModeOpen = useFocusStore((s) => s.setZenModeOpen);
+  const acceptLongBreak = useFocusStore((s) => s.acceptLongBreak);
+  const dismissLongBreakSuggestion = useFocusStore((s) => s.dismissLongBreakSuggestion);
+  const addSubtask = useFocusStore((s) => s.addSubtask);
+  const toggleSubtask = useFocusStore((s) => s.toggleSubtask);
+  const deleteSubtask = useFocusStore((s) => s.deleteSubtask);
 
   const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
   const [colorMenuOpen, setColorMenuOpen] = useState(false);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const toolbarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -341,13 +357,81 @@ export const HeroTimer: React.FC<HeroTimerProps> = ({
             </div>
           </div>
 
-          <div className="hidden sm:flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
-            <Clock className="h-3.5 w-3.5" />
-            <span>
-              {t(lang, 'planned')}: {formatDurationBadge(activeTask.duration_seconds, lang)}
-            </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="hidden sm:flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 mr-1">
+              <Clock className="h-3.5 w-3.5" />
+              <span>
+                {t(lang, 'planned')}: {formatDurationBadge(activeTask.duration_seconds, lang)}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                updateSettings({ pomodoroAutoBreak: !settings.pomodoroAutoBreak })
+              }
+              className={`inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[11px] font-semibold transition ${
+                settings.pomodoroAutoBreak
+                  ? 'border-emerald-500/45 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                  : 'border-zinc-200/80 dark:border-zinc-700/70 bg-white/70 dark:bg-zinc-800/70 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+              }`}
+              title={t(lang, 'pomodoroAutoBreakTitle')}
+            >
+              <span>🍅</span>
+              <span className="hidden sm:inline">{t(lang, 'pomodoroLabel')}</span>
+              {settings.pomodoroAutoBreak && (
+                <span className="font-mono text-[10px] opacity-80">
+                  ({completedPomodoroCount % Math.max(2, settings.longBreakInterval)}/
+                  {settings.longBreakInterval})
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenPip}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200/80 dark:border-zinc-700/70 bg-white/75 dark:bg-zinc-800/75 text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white transition"
+              title={t(lang, 'miniPip')}
+            >
+              <PictureInPicture2 className="h-3.5 w-3.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setZenModeOpen(true)}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200/80 dark:border-zinc-700/70 bg-white/75 dark:bg-zinc-800/75 text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white transition"
+              title={`${t(lang, 'zenMode')} (Z)`}
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
+
+        {/* Long Break Suggestion Banner */}
+        {longBreakSuggestionPending && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/12 px-3 py-2 text-xs">
+            <span className="font-semibold text-emerald-800 dark:text-emerald-200">
+              🌿 {t(lang, 'longBreakSuggestion')} ({settings.longBreakMinutes}
+              {lang === 'tr' ? 'dk' : 'm'})
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={acceptLongBreak}
+                className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1 text-[11px] font-semibold text-white"
+              >
+                {t(lang, 'takeLongBreak')}
+              </button>
+              <button
+                type="button"
+                onClick={dismissLongBreakSuggestion}
+                className="rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
+              >
+                {t(lang, 'skipBreak')}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Timer Visual Area */}
         <div className="my-4 sm:my-5 flex flex-col items-center justify-center">
@@ -475,7 +559,87 @@ export const HeroTimer: React.FC<HeroTimerProps> = ({
             <Inbox className="h-3.5 w-3.5" />
             <span>{t(lang, 'notNowShort')}</span>
           </button>
+
+          {activeTask.is_break && (
+            <button
+              type="button"
+              onClick={() => deleteTask(activeTask.id)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-rose-300/60 dark:border-rose-700/60 bg-rose-500/10 px-3 text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-500/20 transition"
+            >
+              <span>{t(lang, 'skipBreak')}</span>
+            </button>
+          )}
         </div>
+
+        {/* Active Task Interactive Micro-Checklist (Sub-tasks) */}
+        {(activeTask.subtasks?.length ?? 0) > 0 && (
+          <div className="mt-3.5 rounded-xl border border-zinc-200/70 dark:border-zinc-800/80 bg-white/60 dark:bg-zinc-900/50 p-3 space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+              <span>
+                {t(lang, 'subtasksTitle')} (
+                {activeTask.subtasks!.filter((st) => st.completed).length}/
+                {activeTask.subtasks!.length})
+              </span>
+            </div>
+            <div className="space-y-1">
+              {activeTask.subtasks!.map((st) => (
+                <div
+                  key={st.id}
+                  className="group flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50"
+                >
+                  <label className="flex flex-1 items-center gap-2 min-w-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={st.completed}
+                      onChange={() => toggleSubtask(activeTask.id, st.id)}
+                      className="h-3.5 w-3.5 rounded accent-emerald-500 shrink-0"
+                    />
+                    <span
+                      className={`truncate ${
+                        st.completed
+                          ? 'line-through text-zinc-400'
+                          : 'text-zinc-800 dark:text-zinc-200 font-medium'
+                      }`}
+                    >
+                      {st.title}
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => deleteSubtask(activeTask.id, st.id)}
+                    className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-rose-500"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newSubtaskTitle.trim()) return;
+                addSubtask(activeTask.id, newSubtaskTitle);
+                setNewSubtaskTitle('');
+              }}
+              className="flex items-center gap-1.5 pt-1"
+            >
+              <input
+                type="text"
+                value={newSubtaskTitle}
+                onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                placeholder={t(lang, 'subtasksAddPlaceholder')}
+                className="h-7 flex-1 min-w-0 rounded-lg bg-white/90 dark:bg-zinc-950/70 px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-500"
+              />
+              <button
+                type="submit"
+                disabled={!newSubtaskTitle.trim()}
+                className="h-7 rounded-lg bg-zinc-200 dark:bg-zinc-800 px-2.5 text-[11px] font-semibold disabled:opacity-40"
+              >
+                +
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* Playful Llama Life Bar: Emoji Me! | Color Me! | Random Task */}
         {settings.showFunToolbar && (

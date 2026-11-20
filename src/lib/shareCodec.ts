@@ -1,12 +1,12 @@
 import { isValidTaskColor } from './colors';
-import type { SharedListPayload, Task, TaskColor, TaskList } from '../types';
+import type { SharedListPayload, SubTask, Task, TaskColor, TaskList } from '../types';
 
 interface CompactShareV1 {
   v: 1;
   n: string;
   e: string;
   p?: boolean;
-  t: Array<[string, string, number, TaskColor]>;
+  t: Array<[string, string, number, TaskColor, SubTask[]?]>;
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -58,7 +58,11 @@ export async function encodeSharePayload(list: TaskList, tasks: Task[]): Promise
     t: tasks
       .filter((t) => !t.deleted_at && t.status !== 'completed')
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((t) => [t.title, t.emoji || '⚡', t.duration_seconds, t.color]),
+      .map((t): CompactShareV1['t'][number] =>
+        t.subtasks && t.subtasks.length > 0
+          ? [t.title, t.emoji || '⚡', t.duration_seconds, t.color, t.subtasks]
+          : [t.title, t.emoji || '⚡', t.duration_seconds, t.color],
+      ),
   };
 
   const json = JSON.stringify(compact);
@@ -89,6 +93,7 @@ export function exportShareJson(list: TaskList, tasks: Task[]): string {
         emoji: t.emoji || '⚡',
         duration_seconds: t.duration_seconds,
         color: t.color,
+        ...(t.subtasks && t.subtasks.length > 0 ? { subtasks: t.subtasks } : {}),
       })),
   };
   return JSON.stringify(payload, null, 2);
@@ -116,6 +121,7 @@ function normalizeParsedObject(raw: unknown): SharedListPayload {
             typeof item[3] === 'string' && isValidTaskColor(item[3])
               ? item[3]
               : 'none',
+          ...(Array.isArray(item[4]) ? { subtasks: item[4] as SubTask[] } : {}),
         })),
     };
   }
@@ -136,6 +142,7 @@ function normalizeParsedObject(raw: unknown): SharedListPayload {
             typeof item.color === 'string' && isValidTaskColor(item.color)
               ? item.color
               : 'none',
+          ...(Array.isArray(item.subtasks) ? { subtasks: item.subtasks as SubTask[] } : {}),
         })),
     };
   }

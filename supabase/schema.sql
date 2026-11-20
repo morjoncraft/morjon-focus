@@ -35,11 +35,20 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   overtime_added_seconds INTEGER NOT NULL DEFAULT 0 CHECK (overtime_added_seconds >= 0),
   status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'not_now', 'completed')),
   sort_order INTEGER NOT NULL DEFAULT 0,
+  subtasks JSONB NOT NULL DEFAULT '[]'::jsonb,
+  scheduled_start TEXT NULL,
   completed_at TIMESTAMPTZ NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at TIMESTAMPTZ NULL
 );
+
+-- Mevcut veritabanı tabloları için güvenli kolon yükseltmeleri
+ALTER TABLE public.tasks
+  ADD COLUMN IF NOT EXISTS subtasks JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.tasks
+  ADD COLUMN IF NOT EXISTS scheduled_start TEXT NULL;
 
 -- 3. PERFORMANS İNDEKSLERİ
 CREATE INDEX IF NOT EXISTS idx_lists_user_updated

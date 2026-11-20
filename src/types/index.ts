@@ -13,7 +13,7 @@ export type SoundscapeId =
   | 'beach'
   | 'forest';
 
-export type ActiveTab = 'list' | 'not_now' | 'completed';
+export type ActiveTab = 'list' | 'split' | 'timeline' | 'not_now' | 'completed';
 
 export type ThemeMode = 'dark' | 'light';
 
@@ -24,6 +24,8 @@ export type TimerStyle = 'circle' | 'pie' | 'digital' | 'minimal';
 export type NavbarPosition = 'top' | 'bottom' | 'left' | 'right';
 
 export type NavbarStyle = 'icons_text' | 'icons_only' | 'pills';
+
+export type SidebarPosition = 'left' | 'right';
 
 export type SurfaceTheme =
   | 'llama-slate'
@@ -40,6 +42,12 @@ export type CardDensity = 'comfortable' | 'compact';
 export type CornerStyle = 'rounded' | 'pill' | 'sharp';
 
 export type FontStyle = 'sans' | 'rounded' | 'mono';
+
+export interface SubTask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
 
 export interface EmojiThemePack {
   id: string;
@@ -61,7 +69,7 @@ export interface ColorPaletteTheme {
 export interface FocusSettings {
   language: Language;
 
-  // Timer
+  // Timer & Pomodoro
   timerStyle: TimerStyle;
   pieTimer: boolean;
   accentColor: string;
@@ -70,6 +78,10 @@ export interface FocusSettings {
   showStartEndTime: boolean;
   use24HourTime: boolean;
   enableOvertime: boolean;
+  pomodoroAutoBreak: boolean;
+  shortBreakMinutes: number;
+  longBreakMinutes: number;
+  longBreakInterval: number;
 
   // Tasks
   showDeleteButtonOnCard: boolean;
@@ -90,9 +102,11 @@ export interface FocusSettings {
   chimeVolume: number;
   buttonClicks: boolean;
 
-  // Navbar & UI Appearance
+  // Navbar, Sidebar & UI Appearance
   navbarPosition: NavbarPosition;
   navbarStyle: NavbarStyle;
+  sidebarPosition: SidebarPosition;
+  sidebarCollapsed: boolean;
   surfaceTheme: SurfaceTheme;
   ambientGlow: boolean;
   cardVariant: CardVariant;
@@ -131,6 +145,9 @@ export interface Task {
   overtime_added_seconds: number;
   status: TaskStatus;
   sort_order: number;
+  subtasks?: SubTask[];
+  scheduled_start?: string | null;
+  is_break?: boolean;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -166,5 +183,6 @@ export interface SharedListPayload {
     emoji: string;
     duration_seconds: number;
     color: TaskColor;
+    subtasks?: SubTask[];
   }>;
 }

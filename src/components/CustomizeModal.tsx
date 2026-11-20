@@ -10,6 +10,7 @@ import type {
   FontStyle,
   NavbarPosition,
   NavbarStyle,
+  SidebarPosition,
   TimerStyle,
 } from '../types';
 
@@ -290,6 +291,56 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ open, onClose })
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* Sidebar Position & Collapse */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <div className="mb-2 font-semibold text-zinc-700 dark:text-zinc-200">
+                {t(lang, 'sidebarPosTitle')}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(['left', 'right'] as SidebarPosition[]).map((pos) => (
+                  <button
+                    key={pos}
+                    type="button"
+                    onClick={() => updateSettings({ sidebarPosition: pos })}
+                    className={`rounded-xl border py-2 font-semibold transition ${
+                      settings.sidebarPosition === pos
+                        ? 'border-violet-500 bg-violet-500/15 text-zinc-950 dark:text-white'
+                        : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {pos === 'left' ? t(lang, 'posLeft') : t(lang, 'posRight')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 font-semibold text-zinc-700 dark:text-zinc-200">
+                {t(lang, 'sidebarCollapsedLabel')}
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  updateSettings({ sidebarCollapsed: !settings.sidebarCollapsed })
+                }
+                className={`w-full rounded-xl border py-2 font-semibold transition ${
+                  settings.sidebarCollapsed
+                    ? 'border-violet-500 bg-violet-500/15 text-zinc-950 dark:text-white'
+                    : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300'
+                }`}
+              >
+                {settings.sidebarCollapsed
+                  ? lang === 'tr'
+                    ? 'Gizli (Açmak için tıkla)'
+                    : 'Collapsed (Click to Show)'
+                  : lang === 'tr'
+                    ? 'Görünür (Ctrl+B)'
+                    : 'Visible (Ctrl+B)'}
+              </button>
             </div>
           </div>
 

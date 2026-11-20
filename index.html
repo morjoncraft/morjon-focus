@@ -22,6 +22,16 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>Morjon Focus</title>
     <script>
+      window.__deferredPwaPrompt = null;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__deferredPwaPrompt = e;
+        window.dispatchEvent(new Event('morjon-pwa-ready'));
+      });
+      window.addEventListener('appinstalled', function () {
+        window.__deferredPwaPrompt = null;
+        window.dispatchEvent(new Event('morjon-pwa-installed'));
+      });
       (function () {
         try {
           var raw = localStorage.getItem('morjon-focus-storage-v1');

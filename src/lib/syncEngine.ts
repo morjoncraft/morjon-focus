@@ -1,6 +1,6 @@
 import { isValidTaskColor } from './colors';
 import { getSupabaseClient } from './supabase';
-import type { Task, TaskColor, TaskList, TaskStatus } from '../types';
+import type { SubTask, Task, TaskColor, TaskList, TaskStatus } from '../types';
 
 export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -41,6 +41,8 @@ interface CloudTaskRow {
   overtime_added_seconds: number;
   status: string;
   sort_order: number;
+  subtasks?: SubTask[] | null;
+  scheduled_start?: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -80,6 +82,8 @@ function toTask(row: CloudTaskRow): Task {
     overtime_added_seconds: Number(row.overtime_added_seconds) || 0,
     status,
     sort_order: Number(row.sort_order) || 0,
+    subtasks: Array.isArray(row.subtasks) ? row.subtasks : [],
+    scheduled_start: row.scheduled_start ?? null,
     completed_at: row.completed_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -116,6 +120,8 @@ function toCloudTaskRow(task: Task, userId: string): CloudTaskRow {
     overtime_added_seconds: task.overtime_added_seconds,
     status: task.status,
     sort_order: task.sort_order,
+    subtasks: task.subtasks ?? [],
+    scheduled_start: task.scheduled_start ?? null,
     completed_at: task.completed_at ?? null,
     created_at: task.created_at,
     updated_at: task.updated_at,
@@ -165,7 +171,21 @@ export async function pushLocalSnapshotToCloud(
     const { error: tasksError } = await supabase
       .from('tasks')
       .upsert(cleanTasks, { onConflict: 'id' });
-    if (tasksError) throw tasksError;
+    if (tasksError) {
+      const msg = tasksError.message ?? '';
+      if (
+        tasksError.code === 'PGRST204' ||
+        /subtasks|scheduled_start|column/i.test(msg)
+      ) {
+        const legacyTasks = cleanTasks.map(({ subtasks: _s, scheduled_start: _sch, ...rest }) => rest);
+        const { error: retryErr } = await supabase
+          .from('tasks')
+          .upsert(legacyTasks, { onConflict: 'id' });
+        if (retryErr) throw retryErr;
+      } else {
+        throw tasksError;
+      }
+    }
   }
 
   return new Date().toISOString();

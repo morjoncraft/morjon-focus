@@ -13,6 +13,7 @@ import { DEFAULT_SETTINGS } from '../lib/i18n';
 import { sendTimerFinishedNotification } from '../lib/notifications';
 import { suggestEmojiForTitle } from '../lib/parseTaskInput';
 import { mergeAndSyncWithCloud, pruneExpiredTombstones, syncScheduler } from '../lib/syncEngine';
+import { generateSmartBreakdown } from '../lib/taskBreakdown';
 import type {
   ActiveTab,
   BackupData,
@@ -22,6 +23,7 @@ import type {
   FocusUser,
   SharedListPayload,
   SoundscapeId,
+  SubTask,
   SyncStatus,
   Task,
   TaskColor,
@@ -131,6 +133,7 @@ function createInitialSeedData(): {
     color: TaskColor,
     minutes: number,
     sortOrder: number,
+    subtasks: SubTask[] = [],
   ): Task => ({
     id: createUuid(),
     list_id: listId,
@@ -143,6 +146,8 @@ function createInitialSeedData(): {
     overtime_added_seconds: 0,
     status: 'todo',
     sort_order: sortOrder,
+    subtasks,
+    scheduled_start: null,
     completed_at: null,
     created_at: now,
     updated_at: now,
@@ -151,8 +156,12 @@ function createInitialSeedData(): {
   });
 
   const tasks: Task[] = [
-    // Today starter tasks with Rainbow Bliss vibrancy
-    makeSeedTask(todayId, 'Study JUnit lesson 14', '💻', '#9364b8', 45, 0),
+    // Today starter tasks with Rainbow Bliss vibrancy + sample subtasks
+    makeSeedTask(todayId, 'Study JUnit lesson 14', '💻', '#9364b8', 45, 0, [
+      { id: createUuid(), title: 'Watch lecture video', completed: false },
+      { id: createUuid(), title: 'Take key notes', completed: false },
+      { id: createUuid(), title: 'Write sample unit test', completed: false },
+    ]),
     makeSeedTask(todayId, 'Review lecture notes', '📚', '#3aa0b5', 20, 1),
     makeSeedTask(todayId, 'Quick coffee & eye break', '☕', '#0fa988', 10, 2),
     makeSeedTask(todayId, 'Clear inbox & messages', '✉️', '#df7a57', 15, 3),
@@ -203,11 +212,14 @@ export interface FocusState {
   isTimerRunning: boolean;
   lastTickAt: number | null;
   overtimeNotifiedTaskId: string | null;
+  completedPomodoroCount: number;
 
   // Transient UI, alarm & sync state
   isAlarmActive: boolean;
   lastNagMinuteNotified: number;
   focusedSinceLastChimeSec: number;
+  longBreakSuggestionPending: boolean;
+  zenModeOpen: boolean;
   activeTab: ActiveTab;
   user: FocusUser | null;
   syncStatus: SyncStatus;
@@ -267,6 +279,17 @@ export interface FocusState {
   adjustTaskMinutes: (taskId: string, deltaMinutes: number) => void;
   addOvertimeToTask: (taskId: string) => void;
   clearCompletedTasks: () => void;
+
+  // Power Features: Subtasks, Breakdown, Timeline, Pomodoro, Zen, Sidebar
+  addSubtask: (taskId: string, title: string) => void;
+  toggleSubtask: (taskId: string, subtaskId: string) => void;
+  deleteSubtask: (taskId: string, subtaskId: string) => void;
+  breakDownTask: (taskId: string, preferredChunkMinutes?: number) => number;
+  scheduleTaskAt: (taskId: string, timeHHMM: string | null) => void;
+  acceptLongBreak: () => void;
+  dismissLongBreakSuggestion: () => void;
+  setZenModeOpen: (open: boolean) => void;
+  toggleSidebarCollapsed: () => void;
 
   // Timer Actions
   toggleTimer: () => void;
@@ -367,10 +390,13 @@ export const useFocusStore = create<FocusState>()(
       isTimerRunning: false,
       lastTickAt: null,
       overtimeNotifiedTaskId: null,
+      completedPomodoroCount: 0,
 
       isAlarmActive: false,
       lastNagMinuteNotified: 0,
       focusedSinceLastChimeSec: 0,
+      longBreakSuggestionPending: false,
+      zenModeOpen: false,
       activeTab: 'list',
       user: null,
       syncStatus: 'guest',
@@ -417,6 +443,8 @@ export const useFocusStore = create<FocusState>()(
             accentColor: DEFAULT_SETTINGS.accentColor,
             navbarPosition: DEFAULT_SETTINGS.navbarPosition,
             navbarStyle: DEFAULT_SETTINGS.navbarStyle,
+            sidebarPosition: DEFAULT_SETTINGS.sidebarPosition,
+            sidebarCollapsed: DEFAULT_SETTINGS.sidebarCollapsed,
             surfaceTheme: DEFAULT_SETTINGS.surfaceTheme,
             ambientGlow: DEFAULT_SETTINGS.ambientGlow,
             cardVariant: DEFAULT_SETTINGS.cardVariant,
@@ -1002,6 +1030,7 @@ export const useFocusStore = create<FocusState>()(
       completeTask: (taskId) => {
         const now = new Date().toISOString();
         const state = get();
+        const completedTarget = state.tasks.find((t) => t.id === taskId);
         const topTask = getTopTodoTaskForList(state.tasks, state.activeListId);
         const completingTop = topTask?.id === taskId;
 
@@ -1013,29 +1042,86 @@ export const useFocusStore = create<FocusState>()(
           audioEngine.playCompleteSound();
         }
 
-        const remainingActiveCount = state.tasks.filter(
-          (t) =>
-            !t.deleted_at &&
-            t.status === 'todo' &&
-            t.list_id === state.activeListId &&
-            t.id !== taskId,
-        ).length;
+        // Smart Pomodoro Auto-Break Cycle
+        let breakTaskToInsert: Task | null = null;
+        let nextPomodoroCount = state.completedPomodoroCount;
+        let suggestLongBreak = false;
+
+        if (
+          state.settings.pomodoroAutoBreak &&
+          completedTarget &&
+          !completedTarget.is_break &&
+          completedTarget.list_id === state.activeListId
+        ) {
+          nextPomodoroCount += 1;
+          const interval = Math.max(2, state.settings.longBreakInterval);
+          if (nextPomodoroCount % interval === 0) {
+            suggestLongBreak = true;
+          } else {
+            const activeTodos = state.tasks.filter(
+              (t) =>
+                !t.deleted_at &&
+                t.status === 'todo' &&
+                t.list_id === state.activeListId &&
+                t.id !== taskId,
+            );
+            const minOrder = activeTodos.reduce((m, t) => Math.min(m, t.sort_order), 0);
+            const breakSecs = Math.max(1, state.settings.shortBreakMinutes) * 60;
+            breakTaskToInsert = {
+              id: createUuid(),
+              user_id: state.user?.id,
+              list_id: state.activeListId,
+              title:
+                state.settings.language === 'tr' ? 'Kısa Mola' : 'Short Break',
+              emoji: '☕',
+              color: '#0fa988',
+              duration_seconds: breakSecs,
+              remaining_seconds: breakSecs,
+              actual_focused_seconds: 0,
+              overtime_added_seconds: 0,
+              status: 'todo',
+              sort_order: minOrder - 1,
+              subtasks: [],
+              scheduled_start: null,
+              is_break: true,
+              completed_at: null,
+              created_at: now,
+              updated_at: now,
+              deleted_at: null,
+              is_seed: false,
+            };
+          }
+        }
+
+        const remainingActiveCount =
+          state.tasks.filter(
+            (t) =>
+              !t.deleted_at &&
+              t.status === 'todo' &&
+              t.list_id === state.activeListId &&
+              t.id !== taskId,
+          ).length + (breakTaskToInsert ? 1 : 0);
 
         const shouldAutoStart =
           completingTop && state.settings.autoStartNextTask && remainingActiveCount > 0;
 
         set((s) => ({
-          tasks: s.tasks.map((t) =>
-            t.id === taskId
-              ? {
-                  ...t,
-                  status: 'completed',
-                  completed_at: now,
-                  updated_at: now,
-                  is_seed: false,
-                }
-              : t,
-          ),
+          tasks: [
+            ...s.tasks.map((t) =>
+              t.id === taskId
+                ? {
+                    ...t,
+                    status: 'completed' as const,
+                    completed_at: now,
+                    updated_at: now,
+                    is_seed: false,
+                  }
+                : t,
+            ),
+            ...(breakTaskToInsert ? [breakTaskToInsert] : []),
+          ],
+          completedPomodoroCount: nextPomodoroCount,
+          longBreakSuggestionPending: suggestLongBreak ? true : s.longBreakSuggestionPending,
           ...(completingTop
             ? {
                 isTimerRunning: shouldAutoStart,
@@ -1054,6 +1140,224 @@ export const useFocusStore = create<FocusState>()(
         );
 
         triggerSyncIfLoggedIn(get, set);
+      },
+
+      addSubtask: (taskId, title) => {
+        const clean = title.trim();
+        if (!clean) return;
+        const now = new Date().toISOString();
+        const sub: SubTask = { id: createUuid(), title: clean, completed: false };
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  subtasks: [...(t.subtasks ?? []), sub],
+                  updated_at: now,
+                  is_seed: false,
+                }
+              : t,
+          ),
+        }));
+        triggerSyncIfLoggedIn(get, set);
+      },
+
+      toggleSubtask: (taskId, subtaskId) => {
+        const now = new Date().toISOString();
+        get().playButtonClick();
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  subtasks: (t.subtasks ?? []).map((st) =>
+                    st.id === subtaskId ? { ...st, completed: !st.completed } : st,
+                  ),
+                  updated_at: now,
+                  is_seed: false,
+                }
+              : t,
+          ),
+        }));
+        triggerSyncIfLoggedIn(get, set);
+      },
+
+      deleteSubtask: (taskId, subtaskId) => {
+        const now = new Date().toISOString();
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  subtasks: (t.subtasks ?? []).filter((st) => st.id !== subtaskId),
+                  updated_at: now,
+                  is_seed: false,
+                }
+              : t,
+          ),
+        }));
+        triggerSyncIfLoggedIn(get, set);
+      },
+
+      breakDownTask: (taskId, preferredChunkMinutes = 30) => {
+        const state = get();
+        const target = state.tasks.find((t) => t.id === taskId && !t.deleted_at);
+        if (!target || target.status !== 'todo') return 0;
+
+        const baseSeconds =
+          target.remaining_seconds > 60 ? target.remaining_seconds : target.duration_seconds;
+        const parts = generateSmartBreakdown(
+          target.title,
+          baseSeconds,
+          preferredChunkMinutes,
+          state.settings.language,
+        );
+        if (parts.length <= 1) return 0;
+
+        const now = new Date().toISOString();
+        const topTask = getTopTodoTaskForList(state.tasks, state.activeListId);
+        const breakingTop = topTask?.id === taskId;
+        if (breakingTop) get().dismissAlarm();
+        get().playButtonClick();
+
+        const siblings = state.tasks
+          .filter(
+            (t) =>
+              !t.deleted_at &&
+              t.status === 'todo' &&
+              t.list_id === target.list_id &&
+              t.id !== taskId,
+          )
+          .sort((a, b) => a.sort_order - b.sort_order);
+
+        const newTasks: Task[] = parts.map((p, idx) => ({
+          id: createUuid(),
+          user_id: state.user?.id,
+          list_id: target.list_id,
+          title: p.title,
+          emoji: p.emoji,
+          color: target.color,
+          duration_seconds: p.durationSeconds,
+          remaining_seconds: p.durationSeconds,
+          actual_focused_seconds: 0,
+          overtime_added_seconds: 0,
+          status: 'todo',
+          sort_order: target.sort_order + idx,
+          subtasks: [],
+          scheduled_start: idx === 0 ? target.scheduled_start ?? null : null,
+          completed_at: null,
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+          is_seed: false,
+        }));
+
+        // Shift siblings that had sort_order >= target.sort_order
+        const shiftBy = newTasks.length - 1;
+        const shiftIds = new Set(
+          siblings.filter((t) => t.sort_order >= target.sort_order).map((t) => t.id),
+        );
+
+        set((s) => ({
+          tasks: [
+            ...s.tasks.map((t) => {
+              if (t.id === taskId) {
+                return { ...t, deleted_at: now, updated_at: now, is_seed: false };
+              }
+              if (shiftIds.has(t.id)) {
+                return {
+                  ...t,
+                  sort_order: t.sort_order + shiftBy,
+                  updated_at: now,
+                  is_seed: false,
+                };
+              }
+              return t;
+            }),
+            ...newTasks,
+          ],
+          ...(breakingTop
+            ? { isTimerRunning: false, lastTickAt: null, overtimeNotifiedTaskId: null }
+            : {}),
+        }));
+
+        triggerSyncIfLoggedIn(get, set);
+        return newTasks.length;
+      },
+
+      scheduleTaskAt: (taskId, timeHHMM) => {
+        const now = new Date().toISOString();
+        get().playButtonClick();
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId
+              ? { ...t, scheduled_start: timeHHMM, updated_at: now, is_seed: false }
+              : t,
+          ),
+        }));
+        triggerSyncIfLoggedIn(get, set);
+      },
+
+      acceptLongBreak: () => {
+        const state = get();
+        const activeListId = state.activeListId;
+        if (!activeListId) {
+          set({ longBreakSuggestionPending: false });
+          return;
+        }
+        const now = new Date().toISOString();
+        const activeTodos = state.tasks.filter(
+          (t) => !t.deleted_at && t.status === 'todo' && t.list_id === activeListId,
+        );
+        const minOrder = activeTodos.reduce((m, t) => Math.min(m, t.sort_order), 0);
+        const breakSecs = Math.max(1, state.settings.longBreakMinutes) * 60;
+
+        const longBreakTask: Task = {
+          id: createUuid(),
+          user_id: state.user?.id,
+          list_id: activeListId,
+          title:
+            state.settings.language === 'tr' ? 'Uzun Mola' : 'Long Recharge Break',
+          emoji: '🌿',
+          color: '#4caf6a',
+          duration_seconds: breakSecs,
+          remaining_seconds: breakSecs,
+          actual_focused_seconds: 0,
+          overtime_added_seconds: 0,
+          status: 'todo',
+          sort_order: minOrder - 1,
+          subtasks: [],
+          scheduled_start: null,
+          is_break: true,
+          completed_at: null,
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+          is_seed: false,
+        };
+
+        get().playButtonClick();
+        set((s) => ({
+          tasks: [...s.tasks, longBreakTask],
+          longBreakSuggestionPending: false,
+          isTimerRunning: false,
+          lastTickAt: null,
+        }));
+        triggerSyncIfLoggedIn(get, set);
+      },
+
+      dismissLongBreakSuggestion: () => set({ longBreakSuggestionPending: false }),
+
+      setZenModeOpen: (open) => set({ zenModeOpen: open }),
+
+      toggleSidebarCollapsed: () => {
+        get().playButtonClick();
+        set((s) => ({
+          settings: {
+            ...s.settings,
+            sidebarCollapsed: !s.settings.sidebarCollapsed,
+          },
+        }));
       },
 
       uncompleteTask: (taskId) => {
@@ -1746,6 +2050,8 @@ export const useFocusStore = create<FocusState>()(
           overtime_added_seconds: 0,
           status: 'todo',
           sort_order: order++,
+          subtasks: Array.isArray(item.subtasks) ? item.subtasks : [],
+          scheduled_start: null,
           completed_at: null,
           created_at: now,
           updated_at: now,
@@ -1802,6 +2108,7 @@ export const useFocusStore = create<FocusState>()(
         isTimerRunning: state.isTimerRunning,
         lastTickAt: state.lastTickAt,
         overtimeNotifiedTaskId: state.overtimeNotifiedTaskId,
+        completedPomodoroCount: state.completedPomodoroCount,
         lastSyncedAt: state.lastSyncedAt,
       }),
     },

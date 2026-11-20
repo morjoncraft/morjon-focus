@@ -6,9 +6,13 @@ import {
   Globe,
   Loader2,
   Menu,
+  MonitorDown,
   Moon,
   Palette,
+  PanelLeft,
+  PanelRight,
   RefreshCw,
+  Search,
   Settings,
   Share2,
   Sun,
@@ -18,6 +22,7 @@ import {
 } from 'lucide-react';
 import { formatEndTime, formatListDuration } from '../lib/formatters';
 import { t } from '../lib/i18n';
+import { usePwaInstall } from '../lib/pwa';
 import { useFocusStore } from '../store/useFocusStore';
 import type { SoundscapeId } from '../types';
 
@@ -25,7 +30,9 @@ interface NavbarProps {
   nowMs: number;
   totalListRemainingSeconds: number;
   onOpenMobileMenu: () => void;
+  onOpenCommandPalette: () => void;
   onOpenCustomize: () => void;
+  onOpenPwa: () => void;
   onOpenAuth: () => void;
   onOpenShare: () => void;
   onOpenSettings: () => void;
@@ -35,11 +42,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   nowMs,
   totalListRemainingSeconds,
   onOpenMobileMenu,
+  onOpenCommandPalette,
   onOpenCustomize,
+  onOpenPwa,
   onOpenAuth,
   onOpenShare,
   onOpenSettings,
 }) => {
+  const { isStandalone, canInstallPrompt, promptInstall } = usePwaInstall();
+  const toggleSidebarCollapsed = useFocusStore((s) => s.toggleSidebarCollapsed);
   const theme = useFocusStore((s) => s.theme);
   const toggleTheme = useFocusStore((s) => s.toggleTheme);
   const settings = useFocusStore((s) => s.settings);
@@ -169,6 +180,14 @@ export const Navbar: React.FC<NavbarProps> = ({
     );
   };
 
+  const handlePwaClick = async () => {
+    if (canInstallPrompt) {
+      const outcome = await promptInstall();
+      if (outcome !== 'unavailable') return;
+    }
+    onOpenPwa();
+  };
+
   // Side Rail mode (left or right)
   if (isSideRail) {
     return (
@@ -185,6 +204,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             aria-label="Menu"
           >
             <Menu className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleSidebarCollapsed}
+            className="hidden lg:inline-flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+            title={`${t(lang, 'sidebarToggleTitle')} (Ctrl+B)`}
+          >
+            {settings.sidebarPosition === 'right' ? (
+              <PanelRight className="h-4 w-4" />
+            ) : (
+              <PanelLeft className="h-4 w-4" />
+            )}
           </button>
 
           <img src="/favicon.svg" alt="Morjon Focus" className="h-7 w-7 rounded-lg" />
@@ -264,6 +296,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             type="button"
+            onClick={onOpenCommandPalette}
+            className={`${btnBase} h-9 w-9 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200`}
+            title="Ctrl+K"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
             onClick={onOpenCustomize}
             className={`${btnBase} h-9 w-9 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-fuchsia-600 dark:text-fuchsia-400`}
             title={t(lang, 'customize')}
@@ -315,6 +356,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
+          {!isStandalone && (
+            <button
+              type="button"
+              onClick={() => void handlePwaClick()}
+              className={`${btnBase} h-9 w-9 border-emerald-500/35 bg-emerald-500/15 text-emerald-600 dark:text-emerald-300`}
+              title={t(lang, 'installApp')}
+            >
+              <MonitorDown className="h-4 w-4" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onOpenSettings}
@@ -349,6 +401,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             aria-label="Menu"
           >
             <Menu className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleSidebarCollapsed}
+            className={`wco-no-drag hidden lg:inline-flex h-8 w-8 items-center justify-center ${btnShape} border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition shrink-0`}
+            title={`${t(lang, 'sidebarToggleTitle')} (Ctrl+B)`}
+          >
+            {settings.sidebarPosition === 'right' ? (
+              <PanelRight className="h-4 w-4" />
+            ) : (
+              <PanelLeft className="h-4 w-4" />
+            )}
           </button>
 
           <div className="hidden xl:flex items-center gap-2 pr-2 mr-1 border-r border-zinc-200 dark:border-zinc-800 shrink-0">
@@ -464,6 +529,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
+          {/* Command Palette Ctrl+K */}
+          <button
+            type="button"
+            onClick={onOpenCommandPalette}
+            className={`${btnBase} h-8 px-2 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800`}
+            title="Ctrl+K"
+          >
+            <Search className="h-3.5 w-3.5" />
+            {!isIconsOnly && (
+              <kbd className="hidden md:inline rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 font-mono text-[10px] text-zinc-500">
+                Ctrl+K
+              </kbd>
+            )}
+          </button>
+
           {/* Customize Studio Button */}
           <button
             type="button"
@@ -539,6 +619,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Moon className="h-3.5 w-3.5 text-zinc-700" />
             )}
           </button>
+
+          {!isStandalone && (
+            <button
+              type="button"
+              onClick={() => void handlePwaClick()}
+              className={`${btnBase} h-8 px-2 border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25`}
+              title={t(lang, 'installApp')}
+            >
+              <MonitorDown className="h-3.5 w-3.5" />
+              {renderLabel(t(lang, 'installApp'))}
+            </button>
+          )}
 
           <button
             type="button"

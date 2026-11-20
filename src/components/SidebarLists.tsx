@@ -5,6 +5,8 @@ import {
   Inbox,
   Layers,
   ListTodo,
+  PanelLeftClose,
+  PanelRightClose,
   Plus,
   Sparkles,
   Trash2,
@@ -40,12 +42,14 @@ export const SidebarLists: React.FC<SidebarListsProps> = ({
   const deleteList = useFocusStore((s) => s.deleteList);
   const applyPresetToActiveList = useFocusStore((s) => s.applyPresetToActiveList);
   const saveActiveListAsPreset = useFocusStore((s) => s.saveActiveListAsPreset);
+  const toggleSidebarCollapsed = useFocusStore((s) => s.toggleSidebarCollapsed);
 
   const [newListName, setNewListName] = useState('');
   const [addingList, setAddingList] = useState(false);
   const [presetFeedback, setPresetFeedback] = useState<string | null>(null);
 
   const lang = settings.language;
+  const isRightSidebar = settings.sidebarPosition === 'right';
 
   const regularLists = lists
     .filter((l) => !l.deleted_at && !l.is_preset)
@@ -306,17 +310,48 @@ export const SidebarLists: React.FC<SidebarListsProps> = ({
 
   return (
     <>
-      <aside className="hidden lg:block w-72 shrink-0 border-r border-zinc-200/70 dark:border-zinc-800/80 bg-zinc-50/55 dark:bg-black/15 backdrop-blur-sm">
-        {content}
-      </aside>
+      {!settings.sidebarCollapsed && (
+        <aside
+          className={`hidden lg:flex lg:flex-col w-72 shrink-0 ${
+            isRightSidebar ? 'border-l' : 'border-r'
+          } border-zinc-200/70 dark:border-zinc-800/80 bg-zinc-50/55 dark:bg-black/15 backdrop-blur-sm`}
+        >
+          <div className="flex items-center justify-between border-b border-zinc-200/60 dark:border-zinc-800/70 px-3.5 py-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              {t(lang, 'lists')} & {t(lang, 'presets')}
+            </span>
+            <button
+              type="button"
+              onClick={toggleSidebarCollapsed}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 transition"
+              title={`${t(lang, 'sidebarToggleTitle')} (Ctrl+B)`}
+            >
+              {isRightSidebar ? (
+                <PanelRightClose className="h-3.5 w-3.5" />
+              ) : (
+                <PanelLeftClose className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">{content}</div>
+        </aside>
+      )}
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
+        <div
+          className={`fixed inset-0 z-50 lg:hidden flex ${
+            isRightSidebar ? 'justify-end' : 'justify-start'
+          }`}
+        >
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={onCloseMobile}
           />
-          <aside className="relative z-10 w-72 max-w-[85vw] h-full bg-zinc-50 dark:bg-[#1e212a] border-r border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col">
+          <aside
+            className={`relative z-10 w-72 max-w-[85vw] h-full bg-zinc-50 dark:bg-[#1e212a] ${
+              isRightSidebar ? 'border-l' : 'border-r'
+            } border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col`}
+          >
             <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 px-4 py-3">
               <div className="flex items-center gap-2">
                 <img src="/favicon.svg" alt="" className="h-5 w-5 rounded" />

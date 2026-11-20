@@ -16,19 +16,27 @@ import { CompletedStatsView } from './components/CompletedStatsView';
 import { CustomEmojiThemeModal } from './components/CustomEmojiThemeModal';
 import { CustomizeModal } from './components/CustomizeModal';
 import { HeroTimer } from './components/HeroTimer';
+import { ListsView } from './components/ListsView';
 import { Navbar } from './components/Navbar';
 import { NotNowView } from './components/NotNowView';
 import { PipMiniTimerController } from './components/PipMiniTimer';
+import { PresetsView } from './components/PresetsView';
 import { PwaInstallModal } from './components/PwaInstallModal';
 import { QuickAddTask } from './components/QuickAddTask';
 import { SettingsModal } from './components/SettingsModal';
 import { ShareModal } from './components/ShareModal';
 import { SidebarLists } from './components/SidebarLists';
+import { SoundscapeMenu } from './components/SoundscapeMenu';
 import { TaskListView } from './components/TaskListView';
 import { TimelineView } from './components/TimelineView';
 import { ZenModeOverlay } from './components/ZenModeOverlay';
-import { SURFACE_THEMES, hexToRgba } from './lib/colors';
-import { formatTimer, getLocalDateKey } from './lib/formatters';
+import { hexToRgba, resolveActiveBackground } from './lib/colors';
+import {
+  formatEndTime,
+  formatListDuration,
+  formatTimer,
+  getLocalDateKey,
+} from './lib/formatters';
 import { t } from './lib/i18n';
 import { requestPersistentStorage } from './lib/notifications';
 import { decodeShareInput } from './lib/shareCodec';
@@ -68,6 +76,7 @@ export function App() {
   const [pwaOpen, setPwaOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareTargetListId, setShareTargetListId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [customEmojiModal, setCustomEmojiModal] = useState<{
     open: boolean;
@@ -81,8 +90,8 @@ export function App() {
   const pipTriggerRef = useRef<(() => void) | null>(null);
 
   const lang = settings.language;
-  const isDark = theme === 'dark';
-  const surface = SURFACE_THEMES[settings.surfaceTheme] ?? SURFACE_THEMES['llama-slate'];
+  const isSimplified = settings.layoutMode === 'simplified';
+  const resolvedBg = resolveActiveBackground(settings, theme);
 
   const regularLists = useMemo(
     () =>
@@ -127,10 +136,17 @@ export function App() {
     ).length;
   }, [tasks]);
 
-  // 1. Sync Dark/Light class + PWA theme-color meta + html lang
+  // 1. Sync Dark/Light class + UI scale + PWA theme-color meta + html lang
   useEffect(() => {
     const root = document.documentElement;
     root.lang = lang;
+    root.style.fontSize =
+      settings.uiScale === 'large'
+        ? '19px'
+        : settings.uiScale === 'comfortable'
+          ? '17.5px'
+          : '16px';
+
     if (theme === 'dark') {
       root.classList.add('dark');
     } else {
@@ -138,9 +154,9 @@ export function App() {
     }
     const meta = document.getElementById('theme-color-meta');
     if (meta) {
-      meta.setAttribute('content', theme === 'dark' ? surface.darkBg : surface.lightBg);
+      meta.setAttribute('content', resolvedBg);
     }
-  }, [theme, lang, surface.darkBg, surface.lightBg]);
+  }, [theme, lang, resolvedBg, settings.uiScale]);
 
   // 2. Request persistent browser storage on startup
   useEffect(() => {
@@ -338,23 +354,34 @@ export function App() {
         : 'font-sans';
 
   const bgStyle: React.CSSProperties = {
-    backgroundColor: isDark ? surface.darkBg : surface.lightBg,
+    backgroundColor: resolvedBg,
   };
 
   const navPosition = settings.navbarPosition;
   const isVerticalLayout = navPosition === 'top' || navPosition === 'bottom';
   const isListOrSplit = activeTab === 'list' || activeTab === 'split';
+  const focusListDuration = formatListDuration(totalListRemainingSeconds, lang);
+  const focusEndTime = formatEndTime(
+    nowMs,
+    totalListRemainingSeconds,
+    settings.use24HourTime,
+  );
 
   const navbarElement = (
     <Navbar
       nowMs={nowMs}
       totalListRemainingSeconds={totalListRemainingSeconds}
+      customizeOpen={customizeOpen}
+      settingsOpen={settingsOpen}
       onOpenMobileMenu={() => setMobileMenuOpen(true)}
       onOpenCommandPalette={() => setCommandPaletteOpen(true)}
       onOpenCustomize={() => setCustomizeOpen(true)}
       onOpenPwa={() => setPwaOpen(true)}
       onOpenAuth={() => setAuthOpen(true)}
-      onOpenShare={() => setShareOpen(true)}
+      onOpenShare={() => {
+        setShareTargetListId(null);
+        setShareOpen(true);
+      }}
       onOpenSettings={() => setSettingsOpen(true)}
     />
   );
@@ -386,22 +413,26 @@ export function App() {
 
       <div
         className={`flex flex-1 min-w-0 min-h-0 ${
-          settings.sidebarPosition === 'right' ? 'flex-row-reverse' : 'flex-row'
+          !isSimplified && settings.sidebarPosition === 'right'
+            ? 'flex-row-reverse'
+            : 'flex-row'
         }`}
       >
-        <SidebarLists
-          mobileOpen={mobileMenuOpen}
-          onCloseMobile={() => setMobileMenuOpen(false)}
-          notNowCount={notNowCount}
-          completedTodayCount={completedTodayCount}
-        />
+        {!isSimplified && (
+          <SidebarLists
+            mobileOpen={mobileMenuOpen}
+            onCloseMobile={() => setMobileMenuOpen(false)}
+            notNowCount={notNowCount}
+            completedTodayCount={completedTodayCount}
+          />
+        )}
 
         <main className="flex-1 min-w-0 overflow-y-auto">
           <div
-            className={`mx-auto w-full px-3 sm:px-6 py-4 sm:py-6 space-y-4 pb-24 ${
+            className={`mx-auto w-full px-3.5 sm:px-6 py-4 sm:py-6 space-y-4 pb-24 ${
               activeTab === 'split'
                 ? 'max-w-6xl'
-                : activeTab === 'completed'
+                : activeTab === 'completed' || activeTab === 'lists_hub'
                   ? 'max-w-4xl'
                   : 'max-w-2xl'
             }`}
@@ -412,158 +443,211 @@ export function App() {
                 type="button"
                 onClick={dismissAlarm}
                 style={{ backgroundColor: settings.accentColor }}
-                className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg animate-bounce"
+                className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold text-white shadow-lg animate-bounce"
               >
                 <BellRing className="h-4 w-4" />
                 <span>{t(lang, 'visualAlarmBanner')}</span>
               </button>
             )}
 
-            {/* Narrow-Window List Pills */}
-            <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1">
-              {regularLists.map((list) => {
-                const selected = isListOrSplit && activeList?.id === list.id;
-                return (
-                  <button
-                    key={list.id}
-                    type="button"
-                    onClick={() => selectList(list.id)}
-                    style={selected ? { backgroundColor: settings.accentColor } : undefined}
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                      selected
-                        ? 'text-white shadow-sm'
-                        : 'bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
-                    }`}
+            {/* SIMPLIFIED TOP FOCUS SUMMARY ROW: List Time + End Time + Soundscapes */}
+            {isSimplified && activeTab === 'list' && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div
+                    className="flex items-center gap-1.5 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white/85 dark:bg-zinc-900/85 px-3 py-1.5 text-xs sm:text-sm shadow-sm"
+                    title={t(lang, 'listTimeLabel')}
                   >
-                    <span>{list.emoji}</span>
-                    <span>{list.name}</span>
-                  </button>
-                );
-              })}
+                    <span className="text-zinc-500 dark:text-zinc-400">
+                      {t(lang, 'listTimeLabel')}:
+                    </span>
+                    <span className="font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {focusListDuration}
+                    </span>
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('not_now')}
-                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                  activeTab === 'not_now'
-                    ? 'bg-amber-500 text-zinc-950 font-semibold'
-                    : 'bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
-                }`}
-              >
-                <Inbox className="h-3.5 w-3.5" />
-                <span>
-                  {t(lang, 'notNowShort')} ({notNowCount})
-                </span>
-              </button>
+                  <div
+                    className="flex items-center gap-1.5 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white/85 dark:bg-zinc-900/85 px-3 py-1.5 text-xs sm:text-sm shadow-sm"
+                    title={t(lang, 'endTimeLabel')}
+                  >
+                    <span className="text-zinc-500 dark:text-zinc-400">
+                      {t(lang, 'endTimeLabel')}:
+                    </span>
+                    <span className="font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {focusEndTime}
+                    </span>
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('completed')}
-                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                  activeTab === 'completed'
-                    ? 'bg-emerald-600 text-white font-semibold'
-                    : 'bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
-                }`}
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>{t(lang, 'archiveTab')}</span>
-              </button>
-            </div>
-
-            {/* Active List Header + View Switcher (List / Split / Timeline) */}
-            {(isListOrSplit || activeTab === 'timeline') && activeList && (
-              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xl">{activeList.emoji}</span>
-                  {editingListTitle ? (
-                    <input
-                      type="text"
-                      autoFocus
-                      value={draftListName}
-                      onChange={(e) => setDraftListName(e.target.value)}
-                      onBlur={commitListRename}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitListRename();
-                        if (e.key === 'Escape') setEditingListTitle(false);
-                      }}
-                      className="rounded-lg bg-white dark:bg-zinc-900 px-2 py-0.5 text-base font-bold ring-2 ring-violet-500 focus:outline-none"
-                    />
-                  ) : (
+                  {activeList && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setDraftListName(activeList.name);
-                        setEditingListTitle(true);
-                      }}
-                      className="group inline-flex items-center gap-1.5 min-w-0 text-left"
+                      onClick={() => setActiveTab('lists_hub')}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200/70 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 px-2.5 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition"
+                      title={t(lang, 'lists')}
                     >
-                      <h2 className="truncate text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                        {activeList.name}
-                      </h2>
-                      <Pencil className="h-3.5 w-3.5 text-zinc-400 opacity-0 group-hover:opacity-100 transition" />
+                      <span>{activeList.emoji}</span>
+                      <span className="max-w-[120px] truncate">{activeList.name}</span>
                     </button>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <div className="inline-flex rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 p-0.5 text-[11px] font-semibold">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('list')}
-                      className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
-                        activeTab === 'list'
-                          ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
-                          : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-                      }`}
-                    >
-                      <ListTodo className="h-3 w-3" />
-                      <span>{t(lang, 'viewList')}</span>
-                    </button>
+                <SoundscapeMenu direction="down" />
+              </div>
+            )}
 
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('split')}
-                      className={`hidden md:inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
-                        activeTab === 'split'
-                          ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
-                          : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-                      }`}
-                    >
-                      <Columns2 className="h-3 w-3" />
-                      <span>{t(lang, 'viewSplit')}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('timeline')}
-                      className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
-                        activeTab === 'timeline'
-                          ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
-                          : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-                      }`}
-                    >
-                      <CalendarClock className="h-3 w-3" />
-                      <span>{t(lang, 'viewTimeline')}</span>
-                    </button>
-                  </div>
+            {/* ADVANCED MODE NARROW LIST PILLS + HEADER */}
+            {!isSimplified && (
+              <>
+                <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1">
+                  {regularLists.map((list) => {
+                    const selected = isListOrSplit && activeList?.id === list.id;
+                    return (
+                      <button
+                        key={list.id}
+                        type="button"
+                        onClick={() => selectList(list.id)}
+                        style={selected ? { backgroundColor: settings.accentColor } : undefined}
+                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                          selected
+                            ? 'text-white shadow-sm'
+                            : 'bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
+                        }`}
+                      >
+                        <span>{list.emoji}</span>
+                        <span>{list.name}</span>
+                      </button>
+                    );
+                  })}
 
                   <button
                     type="button"
-                    onClick={() => setShareOpen(true)}
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-200/70 dark:text-zinc-400 dark:hover:bg-zinc-800 transition shrink-0"
+                    onClick={() => setActiveTab('not_now')}
+                    className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                      activeTab === 'not_now'
+                        ? 'bg-amber-500 text-zinc-950 font-semibold'
+                        : 'bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
+                    }`}
                   >
-                    <Share2 className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t(lang, 'share')}</span>
+                    <Inbox className="h-3.5 w-3.5" />
+                    <span>
+                      {t(lang, 'notNowShort')} ({notNowCount})
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('completed')}
+                    className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                      activeTab === 'completed'
+                        ? 'bg-emerald-600 text-white font-semibold'
+                        : 'bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>{t(lang, 'archiveTab')}</span>
                   </button>
                 </div>
-              </div>
+
+                {(isListOrSplit || activeTab === 'timeline') && activeList && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xl">{activeList.emoji}</span>
+                      {editingListTitle ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={draftListName}
+                          onChange={(e) => setDraftListName(e.target.value)}
+                          onBlur={commitListRename}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitListRename();
+                            if (e.key === 'Escape') setEditingListTitle(false);
+                          }}
+                          className="rounded-lg bg-white dark:bg-zinc-900 px-2 py-0.5 text-base font-bold ring-2 ring-violet-500 focus:outline-none"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftListName(activeList.name);
+                            setEditingListTitle(true);
+                          }}
+                          className="group inline-flex items-center gap-1.5 min-w-0 text-left"
+                        >
+                          <h2 className="truncate text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                            {activeList.name}
+                          </h2>
+                          <Pencil className="h-3.5 w-3.5 text-zinc-400 opacity-0 group-hover:opacity-100 transition" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <div className="inline-flex rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 p-0.5 text-[11px] font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('list')}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
+                            activeTab === 'list'
+                              ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
+                              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          <ListTodo className="h-3 w-3" />
+                          <span>{t(lang, 'viewList')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('split')}
+                          className={`hidden md:inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
+                            activeTab === 'split'
+                              ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
+                              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          <Columns2 className="h-3 w-3" />
+                          <span>{t(lang, 'viewSplit')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('timeline')}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
+                            activeTab === 'timeline'
+                              ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
+                              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          <CalendarClock className="h-3 w-3" />
+                          <span>{t(lang, 'viewTimeline')}</span>
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShareTargetListId(null);
+                          setShareOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-200/70 dark:text-zinc-400 dark:hover:bg-zinc-800 transition shrink-0"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">{t(lang, 'share')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {activeTab === 'list' && (
               <>
                 <HeroTimer
                   activeTask={topTask}
-                  onQuickApplyPreset={() => setMobileMenuOpen(true)}
+                  onQuickApplyPreset={() =>
+                    isSimplified ? setActiveTab('presets_hub') : setMobileMenuOpen(true)
+                  }
                   onOpenCustomEmojiModal={(mode) =>
                     setCustomEmojiModal({ open: true, mode })
                   }
@@ -575,6 +659,20 @@ export function App() {
                 <TaskListView tasks={activeListTasks} nowMs={nowMs} />
               </>
             )}
+
+            {activeTab === 'lists_hub' && (
+              <ListsView
+                initialSection="lists"
+                notNowCount={notNowCount}
+                completedTodayCount={completedTodayCount}
+                onOpenShareForList={(lid) => {
+                  setShareTargetListId(lid);
+                  setShareOpen(true);
+                }}
+              />
+            )}
+
+            {activeTab === 'presets_hub' && <PresetsView />}
 
             {activeTab === 'split' && (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
@@ -603,9 +701,35 @@ export function App() {
               <TimelineView tasks={activeListTasks} nowMs={nowMs} />
             )}
 
-            {activeTab === 'not_now' && <NotNowView />}
+            {activeTab === 'not_now' &&
+              (isSimplified ? (
+                <ListsView
+                  initialSection="not_now"
+                  notNowCount={notNowCount}
+                  completedTodayCount={completedTodayCount}
+                  onOpenShareForList={(lid) => {
+                    setShareTargetListId(lid);
+                    setShareOpen(true);
+                  }}
+                />
+              ) : (
+                <NotNowView />
+              ))}
 
-            {activeTab === 'completed' && <CompletedStatsView />}
+            {activeTab === 'completed' &&
+              (isSimplified ? (
+                <ListsView
+                  initialSection="stats"
+                  notNowCount={notNowCount}
+                  completedTodayCount={completedTodayCount}
+                  onOpenShareForList={(lid) => {
+                    setShareTargetListId(lid);
+                    setShareOpen(true);
+                  }}
+                />
+              ) : (
+                <CompletedStatsView />
+              ))}
           </div>
         </main>
       </div>
@@ -613,7 +737,7 @@ export function App() {
       {(navPosition === 'bottom' || navPosition === 'right') && navbarElement}
 
       {/* Floating Action Button (FAB) */}
-      {settings.showFabButton && (
+      {settings.showFabButton && (!isSimplified || activeTab === 'list') && (
         <button
           type="button"
           onClick={handleFabClick}
@@ -656,10 +780,12 @@ export function App() {
         open={shareOpen}
         onClose={() => {
           setShareOpen(false);
+          setShareTargetListId(null);
           setIncomingShare(null);
         }}
         incomingPayload={incomingShare}
         onClearIncoming={() => setIncomingShare(null)}
+        listId={shareTargetListId}
       />
 
       <SettingsModal

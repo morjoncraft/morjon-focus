@@ -96,6 +96,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const lang = settings.language;
   const isDark = theme === 'dark';
   const isCompact = settings.cardDensity === 'compact';
+  const isSimplified = settings.layoutMode === 'simplified';
 
   const resolvedColor = resolveTaskCardStyle(task.color, isDark, settings.cardVariant);
   const isOvertime = task.remaining_seconds < 0;
@@ -163,8 +164,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative border px-2.5 sm:px-3.5 ${
-        isCompact ? 'py-1.5' : 'py-2.5'
+      className={`group relative border px-3 sm:px-4 ${
+        isCompact ? 'py-2' : 'py-3'
       } transition-shadow ${cornerClass} ${
         resolvedColor.isNeutral
           ? 'bg-white/95 dark:bg-zinc-800/75 border-zinc-200/90 dark:border-zinc-700/70'
@@ -254,7 +255,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                 className="w-full text-left"
               >
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  <span className="truncate text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">
                     {task.title}
                   </span>
                   {isTopTask && (
@@ -328,7 +329,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                 setDraftMinutes(String(Math.max(1, Math.round(task.remaining_seconds / 60))));
                 setIsEditingMinutes(true);
               }}
-              className={`rounded-lg px-2 py-1 font-mono text-xs font-semibold tabular-nums transition ${
+              className={`rounded-lg px-2.5 py-1 font-mono text-xs sm:text-sm font-semibold tabular-nums transition ${
                 isOvertime
                   ? 'bg-rose-500/15 text-rose-600 dark:text-rose-300'
                   : 'bg-white/75 dark:bg-zinc-900/70 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800'
@@ -340,70 +341,78 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </div>
 
         {/* Card Actions */}
-        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={() => setSubtasksExpanded((v) => !v)}
-            className={`hidden sm:inline-flex h-7 w-7 items-center justify-center rounded-lg transition ${
-              subtasksExpanded || subtasks.length > 0
-                ? 'text-emerald-600 dark:text-emerald-400 hover:bg-white/80 dark:hover:bg-zinc-800'
-                : 'text-zinc-400 hover:bg-white/80 hover:text-zinc-700 dark:hover:bg-zinc-800 opacity-70 group-hover:opacity-100'
-            }`}
-            title={t(lang, 'subtasksTitle')}
-          >
-            <ListChecks className="h-3.5 w-3.5" />
-          </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {!isSimplified && (
+            <>
+              <button
+                type="button"
+                onClick={() => setSubtasksExpanded((v) => !v)}
+                className={`hidden sm:inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                  subtasksExpanded || subtasks.length > 0
+                    ? 'text-emerald-600 dark:text-emerald-400 hover:bg-white/80 dark:hover:bg-zinc-800'
+                    : 'text-zinc-400 hover:bg-white/80 hover:text-zinc-700 dark:hover:bg-zinc-800 opacity-70 group-hover:opacity-100'
+                }`}
+                title={t(lang, 'subtasksTitle')}
+              >
+                <ListChecks className="h-4 w-4" />
+              </button>
 
-          {!isTopTask && (
-            <button
-              type="button"
-              onClick={() => promoteTaskToTop(task.id)}
-              className="hidden sm:inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/80 hover:text-violet-600 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-violet-400 transition opacity-80 group-hover:opacity-100"
-              title={t(lang, 'moveToTop')}
-            >
-              <ArrowUpToLine className="h-3.5 w-3.5" />
-            </button>
+              {!isTopTask && (
+                <button
+                  type="button"
+                  onClick={() => promoteTaskToTop(task.id)}
+                  className="hidden sm:inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/80 hover:text-violet-600 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-violet-400 transition opacity-80 group-hover:opacity-100"
+                  title={t(lang, 'moveToTop')}
+                >
+                  <ArrowUpToLine className="h-4 w-4" />
+                </button>
+              )}
+            </>
           )}
 
           <button
             type="button"
             onClick={handleComplete}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500 hover:text-white transition"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500 hover:text-white transition"
             title={t(lang, 'complete')}
           >
-            <Check className="h-3.5 w-3.5" />
+            <Check className="h-4 w-4" />
           </button>
 
-          <button
-            type="button"
-            onClick={() => resetTaskTimer(task.id)}
-            className="hidden sm:inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/80 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 transition"
-            title={t(lang, 'reset')}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
+          {!isSimplified && (
+            <>
+              <button
+                type="button"
+                onClick={() => resetTaskTimer(task.id)}
+                className="hidden sm:inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/80 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 transition"
+                title={t(lang, 'reset')}
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
 
-          {settings.showDeleteButtonOnCard ? (
-            <button
-              type="button"
-              onClick={() => deleteTask(task.id)}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-rose-500/15 hover:text-rose-600 dark:text-zinc-400 dark:hover:text-rose-400 transition"
-              title={t(lang, 'deleteTask')}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => moveToNotNow(task.id)}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/80 hover:text-amber-600 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-amber-300 transition"
-              title={t(lang, 'notNowShort')}
-            >
-              <Inbox className="h-3.5 w-3.5" />
-            </button>
+              {settings.showDeleteButtonOnCard ? (
+                <button
+                  type="button"
+                  onClick={() => deleteTask(task.id)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-rose-500/15 hover:text-rose-600 dark:text-zinc-400 dark:hover:text-rose-400 transition"
+                  title={t(lang, 'deleteTask')}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => moveToNotNow(task.id)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/80 hover:text-amber-600 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-amber-300 transition"
+                  title={t(lang, 'notNowShort')}
+                >
+                  <Inbox className="h-4 w-4" />
+                </button>
+              )}
+            </>
           )}
 
-          {/* Overflow menu (includes Subtasks toggle, Smart Breakdown, Move to Top, Reset, Not-Now/Delete) */}
+          {/* Overflow menu (includes Subtasks toggle, Smart Breakdown, Move to Top, Reset, Not-Now & Delete) */}
           <div className="relative" ref={moreRef}>
             <button
               type="button"
@@ -411,18 +420,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                 setMoreMenuOpen((v) => !v);
                 setBreakdownOpen(false);
               }}
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition ${
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${
                 isLongTask
                   ? 'text-violet-500 hover:bg-violet-500/15'
                   : 'text-zinc-400 hover:bg-white/80 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'
               }`}
               title={t(lang, 'moreActions')}
             >
-              <MoreHorizontal className="h-3.5 w-3.5" />
+              <MoreHorizontal className="h-4 w-4" />
             </button>
 
             {moreMenuOpen && (
-              <div className="absolute right-0 top-8 z-40 w-48 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1 shadow-xl text-xs animate-fade-slide">
+              <div className="absolute right-0 top-9 z-40 w-48 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1 shadow-xl text-xs animate-fade-slide">
                 <button
                   type="button"
                   onClick={() => {
@@ -500,31 +509,29 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                   <span>{t(lang, 'reset')}</span>
                 </button>
 
-                {settings.showDeleteButtonOnCard ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      moveToNotNow(task.id);
-                      setMoreMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-amber-600 dark:text-amber-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  >
-                    <Inbox className="h-3.5 w-3.5" />
-                    <span>{t(lang, 'notNowShort')}</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      deleteTask(task.id);
-                      setMoreMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>{t(lang, 'deleteTask')}</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    moveToNotNow(task.id);
+                    setMoreMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-amber-600 dark:text-amber-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  <Inbox className="h-3.5 w-3.5" />
+                  <span>{t(lang, 'notNowShort')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteTask(task.id);
+                    setMoreMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>{t(lang, 'deleteTask')}</span>
+                </button>
               </div>
             )}
           </div>

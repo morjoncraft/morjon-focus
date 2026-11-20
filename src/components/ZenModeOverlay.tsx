@@ -11,7 +11,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { SURFACE_THEMES, normalizeHex } from '../lib/colors';
+import { normalizeHex, resolveActiveBackground } from '../lib/colors';
 import { fireTaskCompleteConfetti } from '../lib/confetti';
 import { formatTimer } from '../lib/formatters';
 import { t } from '../lib/i18n';
@@ -51,7 +51,7 @@ export const ZenModeOverlay: React.FC<ZenModeOverlayProps> = ({ activeTask }) =>
 
   const lang = settings.language;
   const isDark = theme === 'dark';
-  const surface = SURFACE_THEMES[settings.surfaceTheme] ?? SURFACE_THEMES['llama-slate'];
+  const resolvedBg = resolveActiveBackground(settings, theme);
   const accentHex =
     (activeTask && normalizeHex(activeTask.color)) || settings.accentColor;
   const isOvertime = activeTask ? activeTask.remaining_seconds < 0 : false;
@@ -81,7 +81,7 @@ export const ZenModeOverlay: React.FC<ZenModeOverlayProps> = ({ activeTask }) =>
     <div
       className="fixed inset-0 z-50 flex flex-col justify-between overflow-y-auto p-5 sm:p-8 animate-fade-slide"
       style={{
-        backgroundColor: isDark ? surface.darkBg : surface.lightBg,
+        backgroundColor: resolvedBg,
       }}
     >
       {/* Top Minimal Bar */}

@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import {
   AlertCircle,
+  Clock,
   Cloud,
   CloudOff,
   Globe,
+  LayoutGrid,
+  ListTodo,
   Loader2,
   Menu,
   MonitorDown,
@@ -17,18 +20,18 @@ import {
   Share2,
   Sun,
   UserCheck,
-  Volume2,
-  VolumeX,
 } from 'lucide-react';
 import { formatEndTime, formatListDuration } from '../lib/formatters';
 import { t } from '../lib/i18n';
 import { usePwaInstall } from '../lib/pwa';
 import { useFocusStore } from '../store/useFocusStore';
-import type { SoundscapeId } from '../types';
+import { SoundscapeMenu } from './SoundscapeMenu';
 
 interface NavbarProps {
   nowMs: number;
   totalListRemainingSeconds: number;
+  customizeOpen: boolean;
+  settingsOpen: boolean;
   onOpenMobileMenu: () => void;
   onOpenCommandPalette: () => void;
   onOpenCustomize: () => void;
@@ -41,6 +44,8 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   nowMs,
   totalListRemainingSeconds,
+  customizeOpen,
+  settingsOpen,
   onOpenMobileMenu,
   onOpenCommandPalette,
   onOpenCustomize,
@@ -55,44 +60,172 @@ export const Navbar: React.FC<NavbarProps> = ({
   const toggleTheme = useFocusStore((s) => s.toggleTheme);
   const settings = useFocusStore((s) => s.settings);
   const updateSettings = useFocusStore((s) => s.updateSettings);
-  const soundscape = useFocusStore((s) => s.soundscape);
-  const soundVolume = useFocusStore((s) => s.soundVolume);
-  const setSoundscape = useFocusStore((s) => s.setSoundscape);
-  const setSoundVolume = useFocusStore((s) => s.setSoundVolume);
+  const activeTab = useFocusStore((s) => s.activeTab);
+  const setActiveTab = useFocusStore((s) => s.setActiveTab);
   const user = useFocusStore((s) => s.user);
   const syncStatus = useFocusStore((s) => s.syncStatus);
   const syncError = useFocusStore((s) => s.syncError);
   const triggerManualSync = useFocusStore((s) => s.triggerManualSync);
 
-  const [soundMenuOpen, setSoundMenuOpen] = useState(false);
-  const soundRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!soundMenuOpen) return;
-    const handleOutside = (e: MouseEvent) => {
-      if (soundRef.current && !soundRef.current.contains(e.target as Node)) {
-        setSoundMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [soundMenuOpen]);
-
   const lang = settings.language;
   const isSideRail = settings.navbarPosition === 'left' || settings.navbarPosition === 'right';
   const isIconsOnly = settings.navbarStyle === 'icons_only';
   const isPills = settings.navbarStyle === 'pills';
+  const isBottom = settings.navbarPosition === 'bottom';
 
-  const soundscapeOptions: Array<{ id: SoundscapeId; label: string; emoji: string }> = [
-    { id: 'off', label: t(lang, 'soundOff'), emoji: '🔇' },
-    { id: 'white', label: t(lang, 'soundWhite'), emoji: '🌬️' },
-    { id: 'rain', label: t(lang, 'soundRain'), emoji: '🌧️' },
-    { id: 'cafe', label: t(lang, 'soundCafe'), emoji: '☕' },
-    { id: 'beach', label: t(lang, 'soundBeach'), emoji: '🏖️' },
-    { id: 'forest', label: t(lang, 'soundForest'), emoji: '🌲' },
-    { id: 'brown', label: t(lang, 'soundBrown'), emoji: '🌊' },
-  ];
+  // =========================================================================
+  // SIMPLIFIED (ADHD-FRIENDLY) 5-ITEM NAVBAR
+  // =========================================================================
+  if (settings.layoutMode === 'simplified') {
+    const anyModalOpen = customizeOpen || settingsOpen;
+    const items = [
+      {
+        id: 'focus',
+        label: t(lang, 'navFocusHome'),
+        icon: Clock,
+        active: !anyModalOpen && activeTab === 'list',
+        onClick: () => setActiveTab('list'),
+      },
+      {
+        id: 'lists',
+        label: t(lang, 'navListsHub'),
+        icon: ListTodo,
+        active:
+          !anyModalOpen &&
+          (activeTab === 'lists_hub' || activeTab === 'not_now' || activeTab === 'completed'),
+        onClick: () => setActiveTab('lists_hub'),
+      },
+      {
+        id: 'presets',
+        label: t(lang, 'navPresetsHub'),
+        icon: LayoutGrid,
+        active: !anyModalOpen && activeTab === 'presets_hub',
+        onClick: () => setActiveTab('presets_hub'),
+      },
+      {
+        id: 'customize',
+        label: t(lang, 'navCustomize'),
+        icon: Palette,
+        active: customizeOpen,
+        onClick: onOpenCustomize,
+      },
+      {
+        id: 'settings',
+        label: t(lang, 'navSettings'),
+        icon: Settings,
+        active: settingsOpen,
+        badge:
+          syncStatus === 'error'
+            ? 'bg-rose-500'
+            : user && syncStatus === 'synced'
+              ? 'bg-emerald-500'
+              : null,
+        onClick: onOpenSettings,
+      },
+    ];
 
+    if (isSideRail) {
+      return (
+        <nav
+          className={`z-30 flex flex-col items-center justify-center gap-3 py-4 px-2.5 border-zinc-200/80 dark:border-zinc-800/90 bg-white/85 dark:bg-[#191b22]/92 backdrop-blur-md ${
+            settings.navbarPosition === 'left' ? 'border-r' : 'border-l'
+          }`}
+        >
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={item.onClick}
+                title={item.label}
+                aria-label={item.label}
+                style={
+                  item.active
+                    ? isPills
+                      ? { backgroundColor: `${settings.accentColor}22`, color: settings.accentColor }
+                      : { color: settings.accentColor }
+                    : undefined
+                }
+                className={`relative flex flex-col items-center justify-center gap-1 rounded-2xl transition ${
+                  isIconsOnly ? 'h-12 w-12' : 'w-16 py-2 px-1'
+                } ${
+                  item.active
+                    ? 'font-semibold'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50'
+                }`}
+              >
+                <Icon className="h-6 w-6 stroke-[1.9]" />
+                {!isIconsOnly && (
+                  <span className="text-[10px] leading-none truncate max-w-full">
+                    {item.label}
+                  </span>
+                )}
+                {item.badge && (
+                  <span
+                    className={`absolute top-2.5 right-2.5 h-2 w-2 rounded-full ${item.badge}`}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      );
+    }
+
+    return (
+      <nav
+        className={`${
+          isBottom
+            ? 'sticky bottom-0 border-t'
+            : 'wco-header wco-safe-right sticky top-0 border-b'
+        } z-30 border-zinc-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-[#191b22]/95 backdrop-blur-md`}
+      >
+        <div className="mx-auto flex max-w-2xl items-center justify-around px-2 py-1.5 sm:py-2">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={item.onClick}
+                title={item.label}
+                aria-label={item.label}
+                style={
+                  item.active
+                    ? isPills
+                      ? { backgroundColor: `${settings.accentColor}20`, color: settings.accentColor }
+                      : { color: settings.accentColor }
+                    : undefined
+                }
+                className={`wco-no-drag relative flex flex-col items-center justify-center gap-1 rounded-2xl transition ${
+                  isIconsOnly ? 'h-12 min-w-[56px] px-4' : 'h-12 min-w-[64px] px-3'
+                } ${
+                  item.active
+                    ? 'font-semibold'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200/40 dark:hover:bg-zinc-800/50'
+                }`}
+              >
+                <Icon className="h-6 w-6 stroke-[1.9]" />
+                {!isIconsOnly && (
+                  <span className="text-[11px] leading-none">{item.label}</span>
+                )}
+                {item.badge && (
+                  <span
+                    className={`absolute top-2 right-3 h-2 w-2 rounded-full ${item.badge}`}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    );
+  }
+
+  // =========================================================================
+  // ADVANCED NAVBAR (Full Toolbar)
+  // =========================================================================
   const listDurationText = formatListDuration(totalListRemainingSeconds, lang);
   const endTimeText = formatEndTime(
     nowMs,
@@ -193,7 +326,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     onOpenPwa();
   };
 
-  // Side Rail mode (left or right)
   if (isSideRail) {
     return (
       <nav
@@ -237,67 +369,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <div className="flex flex-col items-center gap-1.5">
-          <div className="relative" ref={soundRef}>
-            <button
-              type="button"
-              onClick={() => setSoundMenuOpen((v) => !v)}
-              className={`${btnBase} h-9 w-9 ${
-                soundscape !== 'off'
-                  ? 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-300'
-                  : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300'
-              }`}
-              title={t(lang, 'soundscapes')}
-            >
-              {soundscape === 'off' ? (
-                <VolumeX className="h-4 w-4" />
-              ) : (
-                <Volume2 className="h-4 w-4" />
-              )}
-            </button>
-
-            {soundMenuOpen && (
-              <div
-                className={`absolute top-0 ${
-                  settings.navbarPosition === 'left' ? 'left-12' : 'right-12'
-                } w-56 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2.5 shadow-2xl z-50`}
-              >
-                <div className="mb-2 flex items-center justify-between px-1 text-xs font-semibold">
-                  <span>{t(lang, 'soundscapes')}</span>
-                  <span className="tabular-nums text-zinc-400">
-                    {Math.round(soundVolume * 100)}%
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  {soundscapeOptions.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setSoundscape(opt.id)}
-                      className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs ${
-                        soundscape === opt.id
-                          ? 'bg-violet-500/15 font-semibold text-violet-600 dark:text-violet-300'
-                          : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>{opt.emoji}</span>
-                        <span>{opt.label}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="range"
-                  min={0.05}
-                  max={1}
-                  step={0.05}
-                  value={soundVolume}
-                  onChange={(e) => setSoundVolume(Number(e.target.value))}
-                  className="mt-2.5 w-full accent-violet-500"
-                />
-              </div>
-            )}
-          </div>
+          <SoundscapeMenu
+            direction={settings.navbarPosition === 'left' ? 'right' : 'left'}
+            compactLabel
+            shapeClass={btnShape}
+          />
 
           <button
             type="button"
@@ -330,7 +406,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={onOpenAuth}
             className={`relative ${btnBase} h-9 w-9 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900`}
-            title={syncStatus === 'error' ? syncError ?? t(lang, 'syncErrorTitle') : t(lang, 'cloudSignIn')}
+            title={
+              syncStatus === 'error'
+                ? syncError ?? t(lang, 'syncErrorTitle')
+                : t(lang, 'cloudSignIn')
+            }
           >
             {user ? (
               <UserCheck
@@ -390,9 +470,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     );
   }
 
-  // Horizontal Top or Bottom Bar
-  const isBottom = settings.navbarPosition === 'bottom';
-
   return (
     <header
       className={`${
@@ -402,7 +479,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       } z-30 border-zinc-200/80 dark:border-zinc-800/90 bg-zinc-50/88 dark:bg-[#1a1c24]/90 backdrop-blur-md`}
     >
       <div className="mx-auto flex min-h-[54px] max-w-6xl items-center justify-between gap-2 px-3 sm:px-5 py-1.5">
-        {/* Left: Drawer button + Brand + Summary pills */}
         <div className="flex items-center gap-2 min-w-0">
           <button
             type="button"
@@ -462,84 +538,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        {/* Right Controls */}
         <div className="wco-no-drag flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* Soundscapes selector */}
-          <div className="relative" ref={soundRef}>
-            <button
-              type="button"
-              onClick={() => setSoundMenuOpen((v) => !v)}
-              className={`${btnBase} h-8 px-2 ${
-                soundscape !== 'off'
-                  ? 'border-violet-500/40 bg-violet-500/15 text-violet-700 dark:text-violet-300'
-                  : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
-              title={t(lang, 'soundscapes')}
-            >
-              {soundscape === 'off' ? (
-                <VolumeX className="h-3.5 w-3.5" />
-              ) : (
-                <Volume2 className="h-3.5 w-3.5" />
-              )}
-              {renderLabel(
-                soundscape === 'off'
-                  ? t(lang, 'sound')
-                  : soundscapeOptions.find((o) => o.id === soundscape)?.label ?? t(lang, 'sound'),
-              )}
-            </button>
+          <SoundscapeMenu
+            direction={isBottom ? 'up' : 'down'}
+            compactLabel={isIconsOnly}
+            shapeClass={btnShape}
+          />
 
-            {soundMenuOpen && (
-              <div
-                className={`absolute right-0 ${
-                  isBottom ? 'bottom-10' : 'mt-2'
-                } w-60 rounded-2xl border border-zinc-200 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 p-2.5 shadow-2xl z-50 animate-fade-slide`}
-              >
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                    {t(lang, 'soundscapes')}
-                  </span>
-                  <span className="text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
-                    {Math.round(soundVolume * 100)}%
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  {soundscapeOptions.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setSoundscape(opt.id)}
-                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition ${
-                        soundscape === opt.id
-                          ? 'bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
-                          : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>{opt.emoji}</span>
-                        <span>{opt.label}</span>
-                      </span>
-                      {soundscape === opt.id && (
-                        <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-2.5 border-t border-zinc-200 dark:border-zinc-800 pt-2.5 px-1">
-                  <input
-                    type="range"
-                    min={0.05}
-                    max={1}
-                    step={0.05}
-                    value={soundVolume}
-                    onChange={(e) => setSoundVolume(Number(e.target.value))}
-                    className="w-full accent-violet-500 cursor-pointer"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Command Palette Ctrl+K */}
           <button
             type="button"
             onClick={onOpenCommandPalette}
@@ -554,7 +559,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
-          {/* Customize Studio Button */}
           <button
             type="button"
             onClick={onOpenCustomize}
@@ -565,7 +569,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             {renderLabel(t(lang, 'customize'))}
           </button>
 
-          {/* Language EN / TR switcher */}
           <button
             type="button"
             onClick={() => updateSettings({ language: lang === 'en' ? 'tr' : 'en' })}

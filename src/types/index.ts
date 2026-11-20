@@ -11,9 +11,29 @@ export type SoundscapeId =
   | 'cafe'
   | 'brown'
   | 'beach'
-  | 'forest';
+  | 'forest'
+  | 'campfire'
+  | 'winter'
+  | 'custom';
 
-export type ActiveTab = 'list' | 'split' | 'timeline' | 'not_now' | 'completed';
+export interface CustomSoundMeta {
+  fileName: string;
+  sizeBytes: number;
+  durationSec: number;
+}
+
+export type ActiveTab =
+  | 'list'
+  | 'lists_hub'
+  | 'presets_hub'
+  | 'split'
+  | 'timeline'
+  | 'not_now'
+  | 'completed';
+
+export type LayoutMode = 'simplified' | 'advanced';
+
+export type UiScale = 'compact' | 'comfortable' | 'large';
 
 export type ThemeMode = 'dark' | 'light';
 
@@ -33,7 +53,17 @@ export type SurfaceTheme =
   | 'midnight-ocean'
   | 'sunset-glow'
   | 'forest-mist'
-  | 'pure-minimal';
+  | 'pure-minimal'
+  | 'espresso-warm'
+  | 'nordic-fjord'
+  | 'matcha-zen'
+  | 'rose-clay'
+  | 'deep-cosmos'
+  | 'sand-dune'
+  | 'storm-harbor'
+  | 'terracotta-earth'
+  | 'obsidian-oled'
+  | 'oat-milk';
 
 export type CardVariant = 'tinted' | 'solid' | 'left-border' | 'glass';
 
@@ -106,11 +136,18 @@ export interface FocusSettings {
   dailyGoalMinutes: number;
 
   // Navbar, Sidebar & UI Appearance
+  layoutMode: LayoutMode;
+  uiScale: UiScale;
   navbarPosition: NavbarPosition;
   navbarStyle: NavbarStyle;
   sidebarPosition: SidebarPosition;
   sidebarCollapsed: boolean;
   surfaceTheme: SurfaceTheme;
+  customBgEnabled: boolean;
+  customDarkBg: string;
+  customLightBg: string;
+  enableMicroStart: boolean;
+  hideQueueWhileFocusing: boolean;
   ambientGlow: boolean;
   cardVariant: CardVariant;
   cardDensity: CardDensity;

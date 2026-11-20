@@ -15,6 +15,7 @@ interface ShareModalProps {
   onClose: () => void;
   incomingPayload: SharedListPayload | null;
   onClearIncoming: () => void;
+  listId?: string | null;
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
@@ -22,6 +23,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   onClose,
   incomingPayload,
   onClearIncoming,
+  listId,
 }) => {
   const lists = useFocusStore((s) => s.lists);
   const tasks = useFocusStore((s) => s.tasks);
@@ -42,8 +44,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const isTr = lang === 'tr';
 
+  const targetId = listId ?? activeListId;
   const activeList =
-    lists.find((l) => l.id === activeListId && !l.deleted_at) ??
+    lists.find((l) => l.id === targetId && !l.deleted_at) ??
     lists.find((l) => !l.deleted_at && !l.is_preset);
 
   useEffect(() => {

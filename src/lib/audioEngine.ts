@@ -1,3 +1,4 @@
+import { loadCustomAudioBlob } from './customAudioStorage';
 import type { SoundscapeId } from '../types';
 
 class AudioEngine {
@@ -6,6 +7,8 @@ class AudioEngine {
   private masterGain: GainNode | null = null;
   private activeNodes: AudioNode[] = [];
   private activeSources: AudioScheduledSourceNode[] = [];
+  private customAudioEl: HTMLAudioElement | null = null;
+  private customObjectUrl: string | null = null;
   private volume = 0.5;
   private continuousAlarmTimer: number | null = null;
   private continuousAlarmStartedAt = 0;
@@ -54,6 +57,23 @@ class AudioEngine {
         // ignore
       }
       this.masterGain = null;
+    }
+    if (this.customAudioEl) {
+      try {
+        this.customAudioEl.pause();
+        this.customAudioEl.src = '';
+      } catch {
+        // ignore
+      }
+      this.customAudioEl = null;
+    }
+    if (this.customObjectUrl) {
+      try {
+        URL.revokeObjectURL(this.customObjectUrl);
+      } catch {
+        // ignore
+      }
+      this.customObjectUrl = null;
     }
   }
 
@@ -119,10 +139,53 @@ class AudioEngine {
     return buffer;
   }
 
+  private createCrackleBuffer(ctx: AudioContext, seconds = 8): AudioBuffer {
+    const length = ctx.sampleRate * seconds;
+    const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buffer.getChannelData(ch);
+      let idx = Math.floor(Math.random() * ctx.sampleRate * 0.25);
+      while (idx < length) {
+        const amp = 0.25 + Math.random() * 0.65;
+        const popLen = Math.floor(ctx.sampleRate * (0.003 + Math.random() * 0.013));
+        const decay = 4.5 + Math.random() * 3.5;
+        for (let j = 0; j < popLen && idx + j < length; j++) {
+          const env = Math.exp((-j / popLen) * decay);
+          data[idx + j] += (Math.random() * 2 - 1) * amp * env;
+        }
+        // Sparse cozy ember intervals (60ms..550ms)
+        idx += Math.floor(ctx.sampleRate * (0.06 + Math.random() * 0.48));
+      }
+
+      const fade = Math.min(2048, Math.floor(length / 10));
+      for (let i = 0; i < fade; i++) {
+        const t = i / fade;
+        const tailIdx = length - fade + i;
+        const blended = data[i] * t + data[tailIdx] * (1 - t);
+        data[i] = blended;
+        data[tailIdx] = blended;
+      }
+    }
+    return buffer;
+  }
+
   public setVolume(volume: number): void {
     this.volume = Math.max(0, Math.min(1, volume));
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(this.volume * 0.65, this.ctx.currentTime, 0.08);
+    }
+    if (this.customAudioEl) {
+      this.customAudioEl.volume = Math.max(0, Math.min(1, this.volume * 0.85));
+    }
+  }
+
+  public reloadCustomSound(): void {
+    if (this.activeSound === 'custom') {
+      const vol = this.volume;
+      this.stopCurrentSoundscape();
+      this.activeSound = 'off';
+      this.setSoundscape('custom', vol);
     }
   }
 
@@ -137,6 +200,22 @@ class AudioEngine {
     this.activeSound = id;
 
     if (id === 'off') return;
+
+    if (id === 'custom') {
+      void loadCustomAudioBlob()
+        .then((blob) => {
+          if (!blob || this.activeSound !== 'custom') return;
+          const url = URL.createObjectURL(blob);
+          const el = new Audio(url);
+          el.loop = true;
+          el.volume = Math.max(0, Math.min(1, this.volume * 0.85));
+          this.customObjectUrl = url;
+          this.customAudioEl = el;
+          void el.play().catch(() => {});
+        })
+        .catch(() => {});
+      return;
+    }
 
     const ctx = this.ensureContext();
     if (!ctx) return;
@@ -335,6 +414,170 @@ class AudioEngine {
 
       this.activeSources.push(windSrc, windLfo);
       this.activeNodes.push(windBp, windGain, windLfoDepth);
+    } else if (id === 'campfire') {
+      // Warm hearth base rumble + gentle flame air + woody crackles
+      const baseSrc = ctx.createBufferSource();
+      baseSrc.buffer = this.createBrownNoiseBuffer(ctx, 6);
+      baseSrc.loop = true;
+
+      const baseLp = ctx.createBiquadFilter();
+      baseLp.type = 'lowpass';
+      baseLp.frequency.value = 260;
+
+      const baseGain = ctx.createGain();
+      baseGain.gain.value = 0.55;
+
+      const flameLfo = ctx.createOscillator();
+      flameLfo.type = 'sine';
+      flameLfo.frequency.value = 0.18;
+
+      const flameDepth = ctx.createGain();
+      flameDepth.gain.value = 55;
+
+      flameLfo.connect(flameDepth);
+      flameDepth.connect(baseLp.frequency);
+
+      const airSrc = ctx.createBufferSource();
+      airSrc.buffer = this.createPinkNoiseBuffer(ctx, 5);
+      airSrc.loop = true;
+
+      const airBp = ctx.createBiquadFilter();
+      airBp.type = 'bandpass';
+      airBp.frequency.value = 720;
+      airBp.Q.value = 0.8;
+
+      const airGain = ctx.createGain();
+      airGain.gain.value = 0.16;
+
+      const crackleSrc = ctx.createBufferSource();
+      crackleSrc.buffer = this.createCrackleBuffer(ctx, 8);
+      crackleSrc.loop = true;
+
+      const crackleBp = ctx.createBiquadFilter();
+      crackleBp.type = 'bandpass';
+      crackleBp.frequency.value = 1750;
+      crackleBp.Q.value = 0.75;
+
+      const crackleGain = ctx.createGain();
+      crackleGain.gain.value = 0.38;
+
+      baseSrc.connect(baseLp);
+      baseLp.connect(baseGain);
+      baseGain.connect(master);
+
+      airSrc.connect(airBp);
+      airBp.connect(airGain);
+      airGain.connect(master);
+
+      crackleSrc.connect(crackleBp);
+      crackleBp.connect(crackleGain);
+      crackleGain.connect(master);
+
+      baseSrc.start();
+      airSrc.start();
+      crackleSrc.start();
+      flameLfo.start();
+
+      this.activeSources.push(baseSrc, airSrc, crackleSrc, flameLfo);
+      this.activeNodes.push(
+        baseLp,
+        baseGain,
+        flameDepth,
+        airBp,
+        airGain,
+        crackleBp,
+        crackleGain,
+      );
+    } else if (id === 'winter') {
+      // Snow-muffled hush + dual swirling crisp winter gusts
+      const snowSrc = ctx.createBufferSource();
+      snowSrc.buffer = this.createBrownNoiseBuffer(ctx, 6);
+      snowSrc.loop = true;
+
+      const snowLp = ctx.createBiquadFilter();
+      snowLp.type = 'lowpass';
+      snowLp.frequency.value = 320;
+
+      const snowGain = ctx.createGain();
+      snowGain.gain.value = 0.48;
+
+      const gust1Src = ctx.createBufferSource();
+      gust1Src.buffer = this.createPinkNoiseBuffer(ctx, 7);
+      gust1Src.loop = true;
+
+      const gust1Bp = ctx.createBiquadFilter();
+      gust1Bp.type = 'bandpass';
+      gust1Bp.frequency.value = 520;
+      gust1Bp.Q.value = 2.2;
+
+      const gust1Gain = ctx.createGain();
+      gust1Gain.gain.value = 0.34;
+
+      const gust1Lfo = ctx.createOscillator();
+      gust1Lfo.type = 'sine';
+      gust1Lfo.frequency.value = 0.08;
+
+      const gust1FreqDepth = ctx.createGain();
+      gust1FreqDepth.gain.value = 210;
+      gust1Lfo.connect(gust1FreqDepth);
+      gust1FreqDepth.connect(gust1Bp.frequency);
+
+      const gust2Src = ctx.createBufferSource();
+      gust2Src.buffer = this.createPinkNoiseBuffer(ctx, 6);
+      gust2Src.loop = true;
+
+      const gust2Bp = ctx.createBiquadFilter();
+      gust2Bp.type = 'bandpass';
+      gust2Bp.frequency.value = 860;
+      gust2Bp.Q.value = 2.6;
+
+      const gust2Gain = ctx.createGain();
+      gust2Gain.gain.value = 0.14;
+
+      const gust2Lfo = ctx.createOscillator();
+      gust2Lfo.type = 'sine';
+      gust2Lfo.frequency.value = 0.055;
+
+      const gust2FreqDepth = ctx.createGain();
+      gust2FreqDepth.gain.value = 280;
+      gust2Lfo.connect(gust2FreqDepth);
+      gust2FreqDepth.connect(gust2Bp.frequency);
+
+      const gust2AmpDepth = ctx.createGain();
+      gust2AmpDepth.gain.value = 0.11;
+      gust2Lfo.connect(gust2AmpDepth);
+      gust2AmpDepth.connect(gust2Gain.gain);
+
+      snowSrc.connect(snowLp);
+      snowLp.connect(snowGain);
+      snowGain.connect(master);
+
+      gust1Src.connect(gust1Bp);
+      gust1Bp.connect(gust1Gain);
+      gust1Gain.connect(master);
+
+      gust2Src.connect(gust2Bp);
+      gust2Bp.connect(gust2Gain);
+      gust2Gain.connect(master);
+
+      snowSrc.start();
+      gust1Src.start();
+      gust2Src.start();
+      gust1Lfo.start();
+      gust2Lfo.start();
+
+      this.activeSources.push(snowSrc, gust1Src, gust2Src, gust1Lfo, gust2Lfo);
+      this.activeNodes.push(
+        snowLp,
+        snowGain,
+        gust1Bp,
+        gust1Gain,
+        gust1FreqDepth,
+        gust2Bp,
+        gust2Gain,
+        gust2FreqDepth,
+        gust2AmpDepth,
+      );
     }
   }
 
@@ -406,6 +649,29 @@ class AudioEngine {
       gain.connect(ctx.destination);
       osc.start(now + idx * 0.04);
       osc.stop(now + idx * 0.04 + 1.65);
+    });
+  }
+
+  public playMicroWarmupDoneChime(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const notes = [440, 554.37, 659.25];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+
+      gain.gain.setValueAtTime(0.0001, now + idx * 0.1);
+      gain.gain.linearRampToValueAtTime(0.14, now + idx * 0.1 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.1 + 0.55);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.1);
+      osc.stop(now + idx * 0.1 + 0.6);
     });
   }
 

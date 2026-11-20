@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -14,6 +14,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
+import { Eye, EyeOff } from 'lucide-react';
 import { t } from '../lib/i18n';
 import { useFocusStore } from '../store/useFocusStore';
 import type { Task } from '../types';
@@ -25,8 +26,15 @@ interface TaskListViewProps {
 }
 
 export const TaskListView: React.FC<TaskListViewProps> = ({ tasks, nowMs }) => {
-  const lang = useFocusStore((s) => s.settings.language);
+  const settings = useFocusStore((s) => s.settings);
+  const isTimerRunning = useFocusStore((s) => s.isTimerRunning);
   const reorderActiveTasks = useFocusStore((s) => s.reorderActiveTasks);
+
+  const [manualOverride, setManualOverride] = useState<boolean | null>(null);
+
+  const lang = settings.language;
+  const autoHide = settings.hideQueueWhileFocusing && isTimerRunning;
+  const isCollapsed = manualOverride !== null ? manualOverride : autoHide;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -61,36 +69,63 @@ export const TaskListView: React.FC<TaskListViewProps> = ({ tasks, nowMs }) => {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       <div className="flex items-center justify-between px-1">
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
           {t(lang, 'upNext')} ({tasks.length})
         </span>
-        <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-          {t(lang, 'topTaskHint')}
-        </span>
+
+        <div className="flex items-center gap-2">
+          {settings.layoutMode === 'advanced' && (
+            <span className="hidden sm:inline text-[11px] text-zinc-400 dark:text-zinc-500">
+              {t(lang, 'topTaskHint')}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setManualOverride(!isCollapsed)}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-500 hover:bg-zinc-200/60 dark:text-zinc-400 dark:hover:bg-zinc-800/70 transition"
+          >
+            {isCollapsed ? (
+              <>
+                <Eye className="h-3.5 w-3.5" />
+                <span>{t(lang, 'showQueueBtn')}</span>
+              </>
+            ) : (
+              <>
+                <EyeOff className="h-3.5 w-3.5" />
+                <span>{t(lang, 'hideQueueBtn')}</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        modifiers={[restrictToVerticalAxis]}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-2">
-            {tasks.map((task, idx) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                isTopTask={idx === 0}
-                startMs={timeSlots[idx]?.startMs ?? nowMs}
-                endMs={timeSlots[idx]?.endMs ?? nowMs}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+      {!isCollapsed && (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis]}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={tasks.map((task) => task.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-2.5">
+              {tasks.map((task, idx) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  isTopTask={idx === 0}
+                  startMs={timeSlots[idx]?.startMs ?? nowMs}
+                  endMs={timeSlots[idx]?.endMs ?? nowMs}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
     </div>
   );
 };

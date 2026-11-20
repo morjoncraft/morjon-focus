@@ -238,6 +238,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     // Soundscapes
     const sounds: Array<{ id: SoundscapeId; label: string }> = [
       { id: 'off', label: t(lang, 'soundOff') },
+      { id: 'campfire', label: t(lang, 'soundCampfire') },
+      { id: 'winter', label: t(lang, 'soundWinter') },
       { id: 'rain', label: t(lang, 'soundRain') },
       { id: 'cafe', label: t(lang, 'soundCafe') },
       { id: 'beach', label: t(lang, 'soundBeach') },

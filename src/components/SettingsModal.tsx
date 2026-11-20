@@ -3,6 +3,7 @@ import {
   Bell,
   Check,
   Clock,
+  Cloud,
   Database,
   Download,
   HardDrive,
@@ -25,14 +26,16 @@ import {
 import { usePwaInstall } from '../lib/pwa';
 import { useFocusStore } from '../store/useFocusStore';
 import type { BackupData } from '../types';
+import { AccountCloudPanel } from './AuthModal';
 
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
   onOpenPwa: () => void;
+  initialTab?: 'timer' | 'tasks' | 'alarms' | 'account' | 'backup';
 }
 
-type SettingsTab = 'timer' | 'tasks' | 'alarms' | 'backup';
+type SettingsTab = 'timer' | 'tasks' | 'alarms' | 'account' | 'backup';
 
 const ToggleSwitch: React.FC<{
   checked: boolean;
@@ -73,6 +76,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   open,
   onClose,
   onOpenPwa,
+  initialTab = 'timer',
 }) => {
   const { isStandalone } = usePwaInstall();
   const theme = useFocusStore((s) => s.theme);
@@ -86,7 +90,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const exportBackupJson = useFocusStore((s) => s.exportBackupJson);
   const importBackupJson = useFocusStore((s) => s.importBackupJson);
 
-  const [tab, setTab] = useState<SettingsTab>('timer');
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
+
+  React.useEffect(() => {
+    if (open) {
+      setTab(initialTab);
+    }
+  }, [open, initialTab]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [restoreMode, setRestoreMode] = useState<'merge' | 'replace'>('merge');
   const [notifPermission, setNotifPermission] = useState(getNotificationPermission());
@@ -211,12 +221,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="grid grid-cols-4 gap-1 border-b border-zinc-200 dark:border-zinc-800 px-4 py-2 bg-zinc-50/70 dark:bg-zinc-900/50 text-xs">
+        <div className="grid grid-cols-5 gap-1 border-b border-zinc-200 dark:border-zinc-800 px-3 py-2 bg-zinc-50/70 dark:bg-zinc-900/50 text-[11px] sm:text-xs">
           {(
             [
               { id: 'timer', label: t(lang, 'tabTimer'), icon: Clock },
               { id: 'tasks', label: t(lang, 'tabTasks'), icon: ListChecks },
               { id: 'alarms', label: t(lang, 'tabAlarmsSounds'), icon: Volume2 },
+              { id: 'account', label: t(lang, 'tabAccount'), icon: Cloud },
               { id: 'backup', label: t(lang, 'tabBackup'), icon: HardDrive },
             ] as const
           ).map((item) => {
@@ -226,13 +237,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => setTab(item.id)}
-                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 font-semibold transition ${
+                className={`flex items-center justify-center gap-1 rounded-xl py-2 px-1 font-semibold transition ${
                   tab === item.id
                     ? 'bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-sm'
                     : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
                 }`}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{item.label}</span>
               </button>
             );
@@ -243,6 +254,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
           {tab === 'timer' && (
             <div>
+              {renderSettingRow(
+                t(lang, 'layoutModeTitle'),
+                settings.layoutMode === 'simplified'
+                  ? t(lang, 'layoutSimplifiedDesc')
+                  : t(lang, 'layoutAdvancedDesc'),
+                <select
+                  value={settings.layoutMode}
+                  onChange={(e) =>
+                    updateSettings({ layoutMode: e.target.value as 'simplified' | 'advanced' })
+                  }
+                  className="h-9 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2.5 text-xs font-semibold focus:outline-none"
+                >
+                  <option value="simplified">{t(lang, 'layoutSimplified')}</option>
+                  <option value="advanced">{t(lang, 'layoutAdvanced')}</option>
+                </select>,
+              )}
+
+              {renderSettingRow(
+                t(lang, 'languageLabel'),
+                lang === 'tr' ? 'Arayüz dilini değiştir.' : 'Switch interface language.',
+                <select
+                  value={lang}
+                  onChange={(e) => updateSettings({ language: e.target.value as 'en' | 'tr' })}
+                  className="h-9 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-xs font-semibold focus:outline-none"
+                >
+                  <option value="en">English</option>
+                  <option value="tr">Türkçe</option>
+                </select>,
+              )}
+
               {renderSettingRow(
                 t(lang, 'pieTimerTitle'),
                 t(lang, 'pieTimerDesc'),
@@ -441,6 +482,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {tab === 'tasks' && (
             <div>
+              {renderSettingRow(
+                t(lang, 'enableMicroStartTitle'),
+                t(lang, 'enableMicroStartDesc'),
+                <ToggleSwitch
+                  checked={settings.enableMicroStart}
+                  onChange={() =>
+                    updateSettings({ enableMicroStart: !settings.enableMicroStart })
+                  }
+                />,
+              )}
+
+              {renderSettingRow(
+                t(lang, 'hideQueueWhileFocusingTitle'),
+                t(lang, 'hideQueueWhileFocusingDesc'),
+                <ToggleSwitch
+                  checked={settings.hideQueueWhileFocusing}
+                  onChange={() =>
+                    updateSettings({
+                      hideQueueWhileFocusing: !settings.hideQueueWhileFocusing,
+                    })
+                  }
+                />,
+              )}
+
               {renderSettingRow(
                 t(lang, 'showDeleteTitle'),
                 t(lang, 'showDeleteDesc'),
@@ -642,6 +707,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onChange={() => updateSettings({ buttonClicks: !settings.buttonClicks })}
                 />,
               )}
+            </div>
+          )}
+
+          {tab === 'account' && (
+            <div className="py-1">
+              <AccountCloudPanel />
             </div>
           )}
 

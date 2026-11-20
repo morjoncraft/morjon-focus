@@ -24,6 +24,7 @@ import { generateSmartBreakdown } from '../lib/taskBreakdown';
 import type {
   ActiveTab,
   BackupData,
+  CustomSoundMeta,
   DailyCategoryFocusMap,
   DailyFocusMap,
   EmojiThemePack,
@@ -213,6 +214,8 @@ export interface FocusState {
   settings: FocusSettings;
   soundscape: SoundscapeId;
   soundVolume: number;
+  customSoundMeta: CustomSoundMeta | null;
+  adhdLayoutMigrated: boolean;
   activeColorPaletteId: string | null;
   activeEmojiThemeId: string;
   customEmojiThemes: EmojiThemePack[];
@@ -224,6 +227,8 @@ export interface FocusState {
   completedPomodoroCount: number;
 
   // Transient UI, alarm & sync state
+  microSprintRemainingSec: number | null;
+  microSprintCompletedBanner: boolean;
   isAlarmActive: boolean;
   lastNagMinuteNotified: number;
   focusedSinceLastChimeSec: number;
@@ -280,6 +285,7 @@ export interface FocusState {
   ) => void;
   deleteTask: (taskId: string) => void;
   reorderActiveTasks: (activeId: string, overId: string) => void;
+  moveTaskInList: (taskId: string, direction: 'up' | 'down') => void;
   promoteTaskToTop: (taskId: string) => void;
   completeTask: (taskId: string) => void;
   uncompleteTask: (taskId: string) => void;
@@ -305,12 +311,15 @@ export interface FocusState {
   toggleTimer: () => void;
   pauseTimer: () => void;
   tickTimer: (nowMs: number) => void;
+  startMicroSprint: () => void;
+  dismissMicroSprintBanner: () => void;
 
   // Theme & Audio Actions
   toggleTheme: () => void;
   setTheme: (theme: ThemeMode) => void;
   setSoundscape: (id: SoundscapeId) => void;
   setSoundVolume: (vol: number) => void;
+  setCustomSoundMeta: (meta: CustomSoundMeta | null) => void;
 
   // Storage, Sync, Auth, Import/Export Actions
   setStoragePersisted: (persisted: boolean) => void;
@@ -419,6 +428,8 @@ export const useFocusStore = create<FocusState>()(
       settings: DEFAULT_SETTINGS,
       soundscape: 'off',
       soundVolume: 0.5,
+      customSoundMeta: null,
+      adhdLayoutMigrated: true,
       activeColorPaletteId: 'rainbow-bliss',
       activeEmojiThemeId: 'default',
       customEmojiThemes: [],
@@ -428,6 +439,8 @@ export const useFocusStore = create<FocusState>()(
       overtimeNotifiedTaskId: null,
       completedPomodoroCount: 0,
 
+      microSprintRemainingSec: null,
+      microSprintCompletedBanner: false,
       isAlarmActive: false,
       lastNagMinuteNotified: 0,
       focusedSinceLastChimeSec: 0,
@@ -459,7 +472,17 @@ export const useFocusStore = create<FocusState>()(
           next.pieTimer = patch.timerStyle === 'pie';
         }
 
-        set({ settings: next });
+        const currentTab = get().activeTab;
+        const normalizeTab =
+          (next.layoutMode === 'advanced' &&
+            (currentTab === 'lists_hub' || currentTab === 'presets_hub')) ||
+          (next.layoutMode === 'simplified' &&
+            (currentTab === 'split' || currentTab === 'timeline'));
+
+        set({
+          settings: next,
+          ...(normalizeTab ? { activeTab: 'list' } : {}),
+        });
 
         if (patch.soundscapeOnlyWhenRunning !== undefined) {
           syncAudioEnginePlayback(
@@ -475,6 +498,8 @@ export const useFocusStore = create<FocusState>()(
         set((s) => ({
           settings: {
             ...s.settings,
+            layoutMode: DEFAULT_SETTINGS.layoutMode,
+            uiScale: DEFAULT_SETTINGS.uiScale,
             timerStyle: DEFAULT_SETTINGS.timerStyle,
             pieTimer: DEFAULT_SETTINGS.pieTimer,
             accentColor: DEFAULT_SETTINGS.accentColor,
@@ -483,6 +508,11 @@ export const useFocusStore = create<FocusState>()(
             sidebarPosition: DEFAULT_SETTINGS.sidebarPosition,
             sidebarCollapsed: DEFAULT_SETTINGS.sidebarCollapsed,
             surfaceTheme: DEFAULT_SETTINGS.surfaceTheme,
+            customBgEnabled: DEFAULT_SETTINGS.customBgEnabled,
+            customDarkBg: DEFAULT_SETTINGS.customDarkBg,
+            customLightBg: DEFAULT_SETTINGS.customLightBg,
+            enableMicroStart: DEFAULT_SETTINGS.enableMicroStart,
+            hideQueueWhileFocusing: DEFAULT_SETTINGS.hideQueueWhileFocusing,
             ambientGlow: DEFAULT_SETTINGS.ambientGlow,
             cardVariant: DEFAULT_SETTINGS.cardVariant,
             cardDensity: DEFAULT_SETTINGS.cardDensity,
@@ -669,6 +699,8 @@ export const useFocusStore = create<FocusState>()(
           activeTab: 'list',
           isTimerRunning: false,
           lastTickAt: null,
+          microSprintRemainingSec: null,
+          microSprintCompletedBanner: false,
         });
         syncAudioEnginePlayback(
           get().soundscape,
@@ -903,7 +935,9 @@ export const useFocusStore = create<FocusState>()(
 
         if (status === 'todo' && !resolvedListId) {
           const firstRegular = state.lists.find((l) => !l.deleted_at && !l.is_preset);
-          resolvedListId = firstRegular?.id ?? state.createList('Today', '🎯', false);
+          resolvedListId =
+            firstRegular?.id ??
+            state.createList(state.settings.language === 'tr' ? 'Odak' : 'Focus', '🎯', false);
         }
 
         const relevantTasks = get().tasks.filter(
@@ -939,6 +973,9 @@ export const useFocusStore = create<FocusState>()(
         get().playButtonClick();
 
         set((s) => ({
+          ...(status === 'todo' && !s.activeListId && resolvedListId
+            ? { activeListId: resolvedListId }
+            : {}),
           lists: s.lists.map((l) =>
             l.id === resolvedListId ? { ...l, is_seed: false, updated_at: now } : l,
           ),
@@ -1031,7 +1068,58 @@ export const useFocusStore = create<FocusState>()(
               : t,
           ),
           ...(topChanged
-            ? { isTimerRunning: false, lastTickAt: null, overtimeNotifiedTaskId: null }
+            ? {
+                isTimerRunning: false,
+                lastTickAt: null,
+                overtimeNotifiedTaskId: null,
+                microSprintRemainingSec: null,
+                microSprintCompletedBanner: false,
+              }
+            : {}),
+        }));
+        triggerSyncIfLoggedIn(get, set);
+      },
+
+      moveTaskInList: (taskId, direction) => {
+        const state = get();
+        const target = state.tasks.find((t) => t.id === taskId && !t.deleted_at);
+        if (!target || !target.list_id) return;
+
+        const siblings = state.tasks
+          .filter(
+            (t) => !t.deleted_at && t.status === target.status && t.list_id === target.list_id,
+          )
+          .sort((a, b) => a.sort_order - b.sort_order);
+
+        const idx = siblings.findIndex((t) => t.id === taskId);
+        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (idx === -1 || swapIdx < 0 || swapIdx >= siblings.length) return;
+
+        const previousTopId = siblings[0]?.id;
+        const reordered = arrayMove(siblings, idx, swapIdx);
+        const newTopId = reordered[0]?.id;
+        const orderMap = new Map<string, number>();
+        reordered.forEach((t, i) => orderMap.set(t.id, i));
+
+        const now = new Date().toISOString();
+        const affectsActiveTop =
+          target.list_id === state.activeListId && previousTopId !== newTopId;
+
+        get().playButtonClick();
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            orderMap.has(t.id)
+              ? { ...t, sort_order: orderMap.get(t.id)!, updated_at: now, is_seed: false }
+              : t,
+          ),
+          ...(affectsActiveTop
+            ? {
+                isTimerRunning: false,
+                lastTickAt: null,
+                overtimeNotifiedTaskId: null,
+                microSprintRemainingSec: null,
+                microSprintCompletedBanner: false,
+              }
             : {}),
         }));
         triggerSyncIfLoggedIn(get, set);
@@ -1169,6 +1257,8 @@ export const useFocusStore = create<FocusState>()(
                 lastTickAt: shouldAutoStart ? Date.now() : null,
                 overtimeNotifiedTaskId: null,
                 lastNagMinuteNotified: 0,
+                microSprintRemainingSec: null,
+                microSprintCompletedBanner: false,
               }
             : {}),
         }));
@@ -1466,6 +1556,8 @@ export const useFocusStore = create<FocusState>()(
                 lastTickAt: null,
                 overtimeNotifiedTaskId: null,
                 lastNagMinuteNotified: 0,
+                microSprintRemainingSec: null,
+                microSprintCompletedBanner: false,
               }
             : {}),
         }));
@@ -1641,7 +1733,12 @@ export const useFocusStore = create<FocusState>()(
         const state = get();
         if (!state.isTimerRunning) return;
         get().tickTimer(Date.now());
-        set({ isTimerRunning: false, lastTickAt: null });
+        set({
+          isTimerRunning: false,
+          lastTickAt: null,
+          microSprintRemainingSec: null,
+          microSprintCompletedBanner: false,
+        });
         syncAudioEnginePlayback(
           get().soundscape,
           get().soundVolume,
@@ -1650,6 +1747,28 @@ export const useFocusStore = create<FocusState>()(
         );
         triggerSyncIfLoggedIn(get, set);
       },
+
+      startMicroSprint: () => {
+        const state = get();
+        const topTask = getTopTodoTaskForList(state.tasks, state.activeListId);
+        if (!topTask) return;
+        get().playButtonClick();
+        set({
+          microSprintRemainingSec: 120,
+          microSprintCompletedBanner: false,
+          isTimerRunning: true,
+          lastTickAt: Date.now(),
+          overtimeNotifiedTaskId: topTask.remaining_seconds <= 0 ? topTask.id : null,
+        });
+        syncAudioEnginePlayback(
+          state.soundscape,
+          state.soundVolume,
+          true,
+          state.settings.soundscapeOnlyWhenRunning,
+        );
+      },
+
+      dismissMicroSprintBanner: () => set({ microSprintCompletedBanner: false }),
 
       tickTimer: (nowMs) => {
         const state = get();
@@ -1730,6 +1849,18 @@ export const useFocusStore = create<FocusState>()(
             (settings.audioAlarm &&
               (settings.audioAlarmContinuous || settings.audioAlarmNag)));
 
+        // Handle 2-minute micro warm-up milestone
+        let nextMicroSec = state.microSprintRemainingSec;
+        let microCompletedNow = false;
+        if (nextMicroSec !== null && effectiveFocusedDelta > 0) {
+          nextMicroSec -= effectiveFocusedDelta;
+          if (nextMicroSec <= 0) {
+            nextMicroSec = null;
+            microCompletedNow = true;
+            audioEngine.playMicroWarmupDoneChime();
+          }
+        }
+
         set((s) => {
           const prevBucket = s.dailyCategoryFocus[todayKey] ?? { byList: {}, byColor: {} };
           const listKey = topTask.list_id ?? '__none__';
@@ -1771,6 +1902,8 @@ export const useFocusStore = create<FocusState>()(
             isTimerRunning: shouldStopAtZero ? false : s.isTimerRunning,
             focusedSinceLastChimeSec: nextChimeElapsed,
             lastNagMinuteNotified: nextNagMinute,
+            microSprintRemainingSec: shouldStopAtZero ? null : nextMicroSec,
+            ...(microCompletedNow ? { microSprintCompletedBanner: true } : {}),
             ...(crossedZero ? { overtimeNotifiedTaskId: topTask.id } : {}),
             ...(activateAlarm ? { isAlarmActive: true } : {}),
           };
@@ -1800,6 +1933,8 @@ export const useFocusStore = create<FocusState>()(
         audioEngine.setVolume(clamped);
         set({ soundVolume: clamped });
       },
+
+      setCustomSoundMeta: (meta) => set({ customSoundMeta: meta }),
 
       setStoragePersisted: (persisted) => set({ storagePersisted: persisted }),
 
@@ -2179,9 +2314,29 @@ export const useFocusStore = create<FocusState>()(
             : t,
         );
 
+        const needsAdhdMigration = !persisted.adhdLayoutMigrated;
+        const baseSettings: FocusSettings = {
+          ...DEFAULT_SETTINGS,
+          ...(persisted.settings ?? {}),
+          ambientGlow: false,
+          dailyGoalMinutes:
+            persisted.settings?.dailyGoalMinutes ?? DEFAULT_SETTINGS.dailyGoalMinutes,
+        };
+
+        const resolvedSettings: FocusSettings = needsAdhdMigration
+          ? {
+              ...baseSettings,
+              layoutMode: 'simplified',
+              navbarPosition: 'bottom',
+              navbarStyle: 'icons_only',
+              uiScale: 'comfortable',
+            }
+          : baseSettings;
+
         return {
           ...currentState,
           ...persisted,
+          adhdLayoutMigrated: true,
           lists: Array.isArray(persisted.lists)
             ? pruneExpiredTombstones(persisted.lists)
             : currentState.lists,
@@ -2190,13 +2345,7 @@ export const useFocusStore = create<FocusState>()(
             persisted.dailyCategoryFocus && typeof persisted.dailyCategoryFocus === 'object'
               ? persisted.dailyCategoryFocus
               : currentState.dailyCategoryFocus,
-          settings: {
-            ...DEFAULT_SETTINGS,
-            ...(persisted.settings ?? {}),
-            ambientGlow: false,
-            dailyGoalMinutes:
-              persisted.settings?.dailyGoalMinutes ?? DEFAULT_SETTINGS.dailyGoalMinutes,
-          },
+          settings: resolvedSettings,
           customEmojiThemes: Array.isArray(persisted.customEmojiThemes)
             ? persisted.customEmojiThemes
             : currentState.customEmojiThemes,
@@ -2212,6 +2361,8 @@ export const useFocusStore = create<FocusState>()(
         settings: state.settings,
         soundscape: state.soundscape,
         soundVolume: state.soundVolume,
+        customSoundMeta: state.customSoundMeta,
+        adhdLayoutMigrated: state.adhdLayoutMigrated,
         activeColorPaletteId: state.activeColorPaletteId,
         activeEmojiThemeId: state.activeEmojiThemeId,
         customEmojiThemes: state.customEmojiThemes,

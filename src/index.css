@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+}
+
+/* Desktop PWA Window Controls Overlay drag regions */
+.wco-header {
+  -webkit-app-region: drag;
+  app-region: drag;
+  padding-left: env(titlebar-area-x, 0px);
+}
+
+.wco-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+@media (display-mode: window-controls-overlay) {
+  .wco-safe-right {
+    padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 8px);
+  }
+}
+
+@keyframes visual-alarm-flash {
+  0%,
+  100% {
+    opacity: 0.14;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+
+.animate-visual-alarm {
+  animation: visual-alarm-flash 0.9s ease-in-out infinite;
+}
+
+/* Subtle custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 122, 0.35);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(113, 113, 122, 0.55);
+}

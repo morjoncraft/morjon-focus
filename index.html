@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1e212a" id="theme-color-meta" />
+    <meta
+      name="description"
+      content="Morjon Focus — Llama Life inspired time-boxing, colorful tasks, soundscapes, and focus PWA."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>Morjon Focus</title>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('morjon-focus-storage-v1');
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            var theme = parsed && parsed.state && parsed.state.theme;
+            if (theme === 'light') {
+              document.documentElement.classList.remove('dark');
+              var meta = document.getElementById('theme-color-meta');
+              if (meta) meta.setAttribute('content', '#f4f4f5');
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-zinc-100 text-zinc-900 dark:bg-[#18181b] dark:text-zinc-100 antialiased selection:bg-violet-500/30">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

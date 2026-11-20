@@ -12,8 +12,11 @@ import {
 } from 'lucide-react';
 import { formatListDuration } from '../lib/formatters';
 import { t } from '../lib/i18n';
-import { parseTaskInput } from '../lib/parseTaskInput';
-import { suggestEmojiForTitle } from '../lib/parseTaskInput';
+import {
+  normalizeMultiLinePaste,
+  parseBulkTaskInput,
+  suggestEmojiForTitle,
+} from '../lib/parseTaskInput';
 import { useFocusStore } from '../store/useFocusStore';
 import { EmojiColorPicker } from './EmojiColorPicker';
 
@@ -29,7 +32,7 @@ export const PresetsView: React.FC = () => {
   const deleteList = useFocusStore((s) => s.deleteList);
   const applyPresetToActiveList = useFocusStore((s) => s.applyPresetToActiveList);
   const saveActiveListAsPreset = useFocusStore((s) => s.saveActiveListAsPreset);
-  const addTask = useFocusStore((s) => s.addTask);
+  const addTasksBulk = useFocusStore((s) => s.addTasksBulk);
   const updateTask = useFocusStore((s) => s.updateTask);
   const deleteTask = useFocusStore((s) => s.deleteTask);
   const moveTaskInList = useFocusStore((s) => s.moveTaskInList);
@@ -79,18 +82,21 @@ export const PresetsView: React.FC = () => {
     e.preventDefault();
     const raw = (taskInputs[presetId] ?? '').trim();
     if (!raw) return;
-    const parsed = parseTaskInput(
+    const parsedItems = parseBulkTaskInput(
       raw,
       settings.defaultTaskMinutes,
       settings.smartTimeDetection,
     );
-    addTask({
-      title: parsed.title,
-      durationSeconds: parsed.durationSeconds,
-      emoji: parsed.suggestedEmoji,
-      listId: presetId,
-      status: 'todo',
-    });
+    if (parsedItems.length === 0) return;
+    addTasksBulk(
+      parsedItems.map((parsed) => ({
+        title: parsed.title,
+        durationSeconds: parsed.durationSeconds,
+        emoji: parsed.suggestedEmoji,
+        listId: presetId,
+        status: 'todo',
+      })),
+    );
     setTaskInputs((prev) => ({ ...prev, [presetId]: '' }));
   };
 
@@ -323,6 +329,18 @@ export const PresetsView: React.FC = () => {
                       onChange={(e) =>
                         setTaskInputs((prev) => ({ ...prev, [preset.id]: e.target.value }))
                       }
+                      onPaste={(e) => {
+                        const clip = e.clipboardData.getData('text');
+                        if (clip.includes('\n')) {
+                          e.preventDefault();
+                          const normalized = normalizeMultiLinePaste(clip);
+                          const current = taskInputs[preset.id] ?? '';
+                          setTaskInputs((prev) => ({
+                            ...prev,
+                            [preset.id]: current.trim() ? `${current.trim()} ; ${normalized}` : normalized,
+                          }));
+                        }
+                      }}
                       placeholder={t(lang, 'addTaskToPresetPlaceholder')}
                       className="h-9 flex-1 min-w-0 rounded-xl bg-zinc-100 dark:bg-zinc-800 px-3 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                     />
@@ -347,7 +365,9 @@ export const PresetsView: React.FC = () => {
                       {presetTasks.map((pt, idx) => (
                         <div
                           key={pt.id}
-                          className="relative flex items-center gap-2 rounded-xl border border-zinc-200/70 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/50 px-3 py-2"
+                          className={`relative ${
+                            pickerTaskId === pt.id ? 'z-40' : 'z-0'
+                          } flex items-center gap-2 rounded-xl border border-zinc-200/70 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/50 px-3 py-2`}
                         >
                           <div className="relative">
                             <button

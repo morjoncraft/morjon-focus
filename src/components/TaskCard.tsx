@@ -5,6 +5,7 @@ import {
   ArrowUpToLine,
   CalendarClock,
   Check,
+  FolderKanban,
   GripVertical,
   Inbox,
   ListChecks,
@@ -14,7 +15,7 @@ import {
   Trash2,
   Wand2,
 } from 'lucide-react';
-import { resolveTaskCardStyle } from '../lib/colors';
+import { hexToRgba, resolveTaskCardStyle } from '../lib/colors';
 import { fireTaskCompleteConfetti } from '../lib/confetti';
 import { formatTimeRange, formatTimer } from '../lib/formatters';
 import { t } from '../lib/i18n';
@@ -38,8 +39,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 }) => {
   const theme = useFocusStore((s) => s.theme);
   const settings = useFocusStore((s) => s.settings);
+  const projects = useFocusStore((s) => s.projects);
   const isTimerRunning = useFocusStore((s) => s.isTimerRunning);
   const updateTask = useFocusStore((s) => s.updateTask);
+  const createProject = useFocusStore((s) => s.createProject);
   const completeTask = useFocusStore((s) => s.completeTask);
   const resetTaskTimer = useFocusStore((s) => s.resetTaskTimer);
   const moveToNotNow = useFocusStore((s) => s.moveToNotNow);
@@ -68,6 +71,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [projectSubmenuOpen, setProjectSubmenuOpen] = useState(false);
+  const [newProjName, setNewProjName] = useState('');
   const [subtasksExpanded, setSubtasksExpanded] = useState(false);
   const [newStepText, setNewStepText] = useState('');
 
@@ -87,6 +92,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
         setMoreMenuOpen(false);
         setBreakdownOpen(false);
+        setProjectSubmenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleOutside);
@@ -97,6 +103,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const isDark = theme === 'dark';
   const isCompact = settings.cardDensity === 'compact';
   const isSimplified = settings.layoutMode === 'simplified';
+
+  const activeProjects = projects.filter((p) => !p.deleted_at);
+  const assignedProject = activeProjects.find((p) => p.id === task.project_id) ?? null;
 
   const resolvedColor = resolveTaskCardStyle(task.color, isDark, settings.cardVariant);
   const isOvertime = task.remaining_seconds < 0;
@@ -170,13 +179,21 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         resolvedColor.isNeutral
           ? 'bg-white/95 dark:bg-zinc-800/75 border-zinc-200/90 dark:border-zinc-700/70'
           : ''
-      } ${isDragging ? 'z-30 opacity-85 shadow-2xl scale-[1.01]' : 'shadow-sm hover:shadow'}`}
+      } ${
+        pickerOpen || moreMenuOpen
+          ? 'z-40 shadow-md'
+          : isDragging
+            ? 'z-30 opacity-85 shadow-2xl scale-[1.01]'
+            : 'z-0 shadow-sm hover:shadow'
+      }`}
     >
-      {/* Left accent stripe */}
+      {/* Left accent stripe (inset inside corner curve so pill corners never clip or protrude) */}
       <div
-        className={`absolute left-0 top-2 bottom-2 w-1 rounded-r-full ${
-          isTopTask && isTimerRunning ? 'animate-pulse' : ''
-        }`}
+        className={`absolute w-1 rounded-full ${
+          settings.cornerStyle === 'pill'
+            ? 'left-2.5 top-3 bottom-3'
+            : 'left-1.5 top-2.5 bottom-2.5'
+        } ${isTopTask && isTimerRunning ? 'animate-pulse' : ''}`}
         style={{
           backgroundColor:
             isTopTask && isTimerRunning ? '#10b981' : resolvedColor.accentHex,
@@ -190,7 +207,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           type="button"
           {...attributes}
           {...listeners}
-          className="ml-1 flex h-8 w-5 shrink-0 cursor-grab active:cursor-grabbing items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-200 touch-none"
+          className={`${
+            settings.cornerStyle === 'pill' ? 'ml-2.5' : 'ml-1.5'
+          } flex h-8 w-5 shrink-0 cursor-grab active:cursor-grabbing items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-200 touch-none`}
           title={t(lang, 'dragToReorder')}
         >
           <GripVertical className="h-4 w-4" />
@@ -282,6 +301,19 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                 {settings.showStartEndTime && !isCompact && (
                   <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
                     {formatTimeRange(startMs, endMs, settings.use24HourTime)}
+                  </span>
+                )}
+
+                {assignedProject && (
+                  <span
+                    style={{
+                      backgroundColor: hexToRgba(assignedProject.color, isDark ? 0.22 : 0.14),
+                      color: isDark ? '#f4f4f5' : '#18181b',
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                  >
+                    <span>{assignedProject.emoji}</span>
+                    <span className="max-w-[130px] truncate">{assignedProject.name}</span>
                   </span>
                 )}
 
@@ -412,13 +444,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             </>
           )}
 
-          {/* Overflow menu (includes Subtasks toggle, Smart Breakdown, Move to Top, Reset, Not-Now & Delete) */}
+          {/* Overflow menu (includes Subtasks toggle, Assign Project, Smart Breakdown, Move to Top, Reset, Not-Now & Delete) */}
           <div className="relative" ref={moreRef}>
             <button
               type="button"
               onClick={() => {
                 setMoreMenuOpen((v) => !v);
                 setBreakdownOpen(false);
+                setProjectSubmenuOpen(false);
               }}
               className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${
                 isLongTask
@@ -431,7 +464,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             </button>
 
             {moreMenuOpen && (
-              <div className="absolute right-0 top-9 z-40 w-48 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1 shadow-xl text-xs animate-fade-slide">
+              <div className="absolute right-0 top-9 z-50 w-56 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1 shadow-xl text-xs animate-fade-slide">
                 <button
                   type="button"
                   onClick={() => {
@@ -443,6 +476,102 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                   <ListChecks className="h-3.5 w-3.5 text-emerald-500" />
                   <span>{t(lang, 'subtasksTitle')}</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProjectSubmenuOpen((v) => !v);
+                    setBreakdownOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <FolderKanban className="h-3.5 w-3.5 shrink-0 text-sky-500" />
+                    <span className="truncate">{t(lang, 'assignProject')}</span>
+                  </span>
+                  {assignedProject && (
+                    <span className="ml-1 shrink-0 text-[11px] opacity-80">
+                      {assignedProject.emoji}
+                    </span>
+                  )}
+                </button>
+
+                {projectSubmenuOpen && (
+                  <div className="mx-1 my-1 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 p-1.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateTask(task.id, { project_id: null });
+                        setMoreMenuOpen(false);
+                        setProjectSubmenuOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                        !task.project_id
+                          ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                          : 'bg-white dark:bg-zinc-900 hover:bg-zinc-200/70 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      <span>{t(lang, 'projectNone')}</span>
+                      {!task.project_id && <Check className="h-3 w-3" />}
+                    </button>
+
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {activeProjects.map((proj) => {
+                        const selected = task.project_id === proj.id;
+                        return (
+                          <button
+                            key={proj.id}
+                            type="button"
+                            onClick={() => {
+                              updateTask(task.id, { project_id: proj.id });
+                              setMoreMenuOpen(false);
+                              setProjectSubmenuOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                              selected
+                                ? 'bg-violet-600 text-white'
+                                : 'bg-white dark:bg-zinc-900 hover:bg-zinc-200/70 dark:hover:bg-zinc-700'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              <span>{proj.emoji}</span>
+                              <span className="truncate">{proj.name}</span>
+                            </span>
+                            {selected && <Check className="h-3 w-3 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!newProjName.trim()) return;
+                        const pid = createProject(newProjName.trim());
+                        updateTask(task.id, { project_id: pid });
+                        setNewProjName('');
+                        setProjectSubmenuOpen(false);
+                        setMoreMenuOpen(false);
+                      }}
+                      className="flex items-center gap-1 pt-0.5"
+                    >
+                      <input
+                        type="text"
+                        value={newProjName}
+                        onChange={(e) => setNewProjName(e.target.value)}
+                        placeholder={t(lang, 'newProjectPlaceholder')}
+                        className="h-6 flex-1 min-w-0 rounded bg-white dark:bg-zinc-900 px-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-violet-500"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!newProjName.trim()}
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-violet-600 text-white disabled:opacity-40"
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </form>
+                  </div>
+                )}
 
                 {task.remaining_seconds >= 20 * 60 && (
                   <button

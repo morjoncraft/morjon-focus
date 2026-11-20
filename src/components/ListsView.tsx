@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { formatListDuration, formatTimer } from '../lib/formatters';
 import { t } from '../lib/i18n';
-import { parseTaskInput } from '../lib/parseTaskInput';
+import { normalizeMultiLinePaste, parseBulkTaskInput } from '../lib/parseTaskInput';
 import { useFocusStore } from '../store/useFocusStore';
 import { CompletedStatsView } from './CompletedStatsView';
 import { NotNowView } from './NotNowView';
@@ -45,7 +45,7 @@ export const ListsView: React.FC<ListsViewProps> = ({
   const createList = useFocusStore((s) => s.createList);
   const updateList = useFocusStore((s) => s.updateList);
   const deleteList = useFocusStore((s) => s.deleteList);
-  const addTask = useFocusStore((s) => s.addTask);
+  const addTasksBulk = useFocusStore((s) => s.addTasksBulk);
   const updateTask = useFocusStore((s) => s.updateTask);
   const deleteTask = useFocusStore((s) => s.deleteTask);
   const moveTaskInList = useFocusStore((s) => s.moveTaskInList);
@@ -80,18 +80,21 @@ export const ListsView: React.FC<ListsViewProps> = ({
     e.preventDefault();
     const raw = (taskInputs[listId] ?? '').trim();
     if (!raw) return;
-    const parsed = parseTaskInput(
+    const parsedItems = parseBulkTaskInput(
       raw,
       settings.defaultTaskMinutes,
       settings.smartTimeDetection,
     );
-    addTask({
-      title: parsed.title,
-      durationSeconds: parsed.durationSeconds,
-      emoji: parsed.suggestedEmoji,
-      listId,
-      status: 'todo',
-    });
+    if (parsedItems.length === 0) return;
+    addTasksBulk(
+      parsedItems.map((parsed) => ({
+        title: parsed.title,
+        durationSeconds: parsed.durationSeconds,
+        emoji: parsed.suggestedEmoji,
+        listId,
+        status: 'todo',
+      })),
+    );
     setTaskInputs((prev) => ({ ...prev, [listId]: '' }));
   };
 
@@ -382,6 +385,18 @@ export const ListsView: React.FC<ListsViewProps> = ({
                           onChange={(e) =>
                             setTaskInputs((prev) => ({ ...prev, [list.id]: e.target.value }))
                           }
+                          onPaste={(e) => {
+                            const clip = e.clipboardData.getData('text');
+                            if (clip.includes('\n')) {
+                              e.preventDefault();
+                              const normalized = normalizeMultiLinePaste(clip);
+                              const current = taskInputs[list.id] ?? '';
+                              setTaskInputs((prev) => ({
+                                ...prev,
+                                [list.id]: current.trim() ? `${current.trim()} ; ${normalized}` : normalized,
+                              }));
+                            }
+                          }}
                           placeholder={t(lang, 'quickAddPlaceholder')}
                           className="h-9 flex-1 min-w-0 rounded-xl bg-zinc-100 dark:bg-zinc-800 px-3 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                         />

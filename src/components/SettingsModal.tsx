@@ -9,6 +9,7 @@ import {
   HardDrive,
   ListChecks,
   MonitorDown,
+  Play,
   Upload,
   Volume2,
   X,
@@ -25,7 +26,7 @@ import {
 } from '../lib/notifications';
 import { usePwaInstall } from '../lib/pwa';
 import { useFocusStore } from '../store/useFocusStore';
-import type { BackupData } from '../types';
+import type { AlarmSoundId, BackupData } from '../types';
 import { AccountCloudPanel } from './AuthModal';
 
 interface SettingsModalProps {
@@ -172,7 +173,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleTestSoundAndNotif = () => {
-    audioEngine.playTimerDoneChime();
+    audioEngine.playTimerDoneChime(settings.alarmSound);
     sendTimerFinishedNotification('Test Alarm', '🔔', lang);
   };
 
@@ -569,6 +570,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onChange={() => updateSettings({ showFabButton: !settings.showFabButton })}
                 />,
               )}
+
+              {renderSettingRow(
+                t(lang, 'showCompletedInFocusTitle'),
+                t(lang, 'showCompletedInFocusDesc'),
+                <ToggleSwitch
+                  checked={settings.showCompletedInFocus}
+                  onChange={() =>
+                    updateSettings({ showCompletedInFocus: !settings.showCompletedInFocus })
+                  }
+                />,
+              )}
             </div>
           )}
 
@@ -591,6 +603,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onChange={() => updateSettings({ audioAlarm: !settings.audioAlarm })}
                 />,
               )}
+
+              {/* Alarm Sound Selection + Preview */}
+              <div className="flex flex-wrap items-start justify-between gap-4 py-3 border-b border-zinc-200/70 dark:border-zinc-800/80">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    {t(lang, 'alarmSoundTitle')}
+                  </div>
+                  <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    {t(lang, 'alarmSoundDesc')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                  <select
+                    value={settings.alarmSound}
+                    onChange={(e) => {
+                      const nextSound = e.target.value as AlarmSoundId;
+                      updateSettings({ alarmSound: nextSound });
+                      audioEngine.playTimerDoneChime(nextSound);
+                    }}
+                    className="h-9 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2.5 text-xs font-semibold focus:outline-none"
+                  >
+                    <option value="crystal_chime">{t(lang, 'alarmCrystalChime')}</option>
+                    <option value="soft_harp">{t(lang, 'alarmSoftHarp')}</option>
+                    <option value="singing_bowl">{t(lang, 'alarmSingingBowl')}</option>
+                    <option value="warm_marimba">{t(lang, 'alarmWarmMarimba')}</option>
+                    <option value="gentle_piano">{t(lang, 'alarmGentlePiano')}</option>
+                    <option value="digital_pulse">{t(lang, 'alarmDigitalPulse')}</option>
+                    <option value="classic_bell">{t(lang, 'alarmClassicBell')}</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => audioEngine.playTimerDoneChime(settings.alarmSound)}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition"
+                  >
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                    <span>{t(lang, 'previewAlarmBtn')}</span>
+                  </button>
+                </div>
+              </div>
 
               {renderSettingRow(
                 t(lang, 'audioContinuousTitle'),

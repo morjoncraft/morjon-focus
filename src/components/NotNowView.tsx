@@ -3,14 +3,14 @@ import { ArrowUpRight, Inbox, Plus, Trash2 } from 'lucide-react';
 import { resolveTaskCardStyle } from '../lib/colors';
 import { formatTimer } from '../lib/formatters';
 import { t } from '../lib/i18n';
-import { parseTaskInput } from '../lib/parseTaskInput';
+import { normalizeMultiLinePaste, parseBulkTaskInput } from '../lib/parseTaskInput';
 import { useFocusStore } from '../store/useFocusStore';
 
 export const NotNowView: React.FC = () => {
   const tasks = useFocusStore((s) => s.tasks);
   const theme = useFocusStore((s) => s.theme);
   const settings = useFocusStore((s) => s.settings);
-  const addTask = useFocusStore((s) => s.addTask);
+  const addTasksBulk = useFocusStore((s) => s.addTasksBulk);
   const recallFromNotNow = useFocusStore((s) => s.recallFromNotNow);
   const deleteTask = useFocusStore((s) => s.deleteTask);
 
@@ -26,18 +26,21 @@ export const NotNowView: React.FC = () => {
   const handleAddToPool = (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickInput.trim()) return;
-    const parsed = parseTaskInput(
+    const parsedItems = parseBulkTaskInput(
       quickInput,
       settings.defaultTaskMinutes,
       settings.smartTimeDetection,
     );
-    addTask({
-      title: parsed.title,
-      durationSeconds: parsed.durationSeconds,
-      emoji: parsed.suggestedEmoji,
-      status: 'not_now',
-      listId: null,
-    });
+    if (parsedItems.length === 0) return;
+    addTasksBulk(
+      parsedItems.map((parsed) => ({
+        title: parsed.title,
+        durationSeconds: parsed.durationSeconds,
+        emoji: parsed.suggestedEmoji,
+        status: 'not_now',
+        listId: null,
+      })),
+    );
     setQuickInput('');
   };
 
@@ -63,6 +66,16 @@ export const NotNowView: React.FC = () => {
             type="text"
             value={quickInput}
             onChange={(e) => setQuickInput(e.target.value)}
+            onPaste={(e) => {
+              const clip = e.clipboardData.getData('text');
+              if (clip.includes('\n')) {
+                e.preventDefault();
+                const normalized = normalizeMultiLinePaste(clip);
+                setQuickInput((prev) =>
+                  prev.trim() ? `${prev.trim()} ; ${normalized}` : normalized,
+                );
+              }
+            }}
             placeholder={t(lang, 'notNowInputPlaceholder')}
             className="h-9 flex-1 min-w-0 rounded-xl bg-zinc-100 dark:bg-zinc-800 px-3 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/60"
           />

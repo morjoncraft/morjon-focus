@@ -1,5 +1,5 @@
 import { loadCustomAudioBlob } from './customAudioStorage';
-import type { SoundscapeId } from '../types';
+import type { AlarmSoundId, SoundscapeId } from '../types';
 
 class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -581,11 +581,188 @@ class AudioEngine {
     }
   }
 
-  public playTimerDoneChime(): void {
+  public playTimerDoneChime(soundId: AlarmSoundId = 'crystal_chime'): void {
     const ctx = this.ensureContext();
     if (!ctx) return;
 
     const now = ctx.currentTime;
+
+    if (soundId === 'soft_harp') {
+      const notes = [523.25, 587.33, 659.25, 783.99, 880, 1046.5];
+      notes.forEach((freq, idx) => {
+        const start = now + idx * 0.085;
+        const osc = ctx.createOscillator();
+        const overtone = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const overGain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+        overtone.type = 'triangle';
+        overtone.frequency.setValueAtTime(freq * 2, start);
+
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.linearRampToValueAtTime(0.14, start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.6);
+
+        overGain.gain.setValueAtTime(0.0001, start);
+        overGain.gain.linearRampToValueAtTime(0.035, start + 0.01);
+        overGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.5);
+
+        osc.connect(gain);
+        overtone.connect(overGain);
+        overGain.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(start);
+        overtone.start(start);
+        osc.stop(start + 1.65);
+        overtone.stop(start + 0.55);
+      });
+      return;
+    }
+
+    if (soundId === 'singing_bowl') {
+      const partials: Array<[number, number, number]> = [
+        [256, 0.2, 3.0],
+        [512, 0.09, 2.4],
+        [769.2, 0.045, 1.9],
+      ];
+      partials.forEach(([freq, peak, dur]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(peak, now + 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + dur + 0.05);
+      });
+      return;
+    }
+
+    if (soundId === 'warm_marimba') {
+      const notes = [349.23, 440, 523.25, 698.46];
+      notes.forEach((freq, idx) => {
+        const start = now + idx * 0.12;
+        const fund = ctx.createOscillator();
+        const harmonic = ctx.createOscillator();
+        const fundGain = ctx.createGain();
+        const harmGain = ctx.createGain();
+
+        fund.type = 'sine';
+        fund.frequency.setValueAtTime(freq, start);
+        harmonic.type = 'sine';
+        harmonic.frequency.setValueAtTime(freq * 4, start);
+
+        fundGain.gain.setValueAtTime(0.0001, start);
+        fundGain.gain.linearRampToValueAtTime(0.2, start + 0.008);
+        fundGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.55);
+
+        harmGain.gain.setValueAtTime(0.0001, start);
+        harmGain.gain.linearRampToValueAtTime(0.07, start + 0.004);
+        harmGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.08);
+
+        fund.connect(fundGain);
+        harmonic.connect(harmGain);
+        fundGain.connect(ctx.destination);
+        harmGain.connect(ctx.destination);
+
+        fund.start(start);
+        harmonic.start(start);
+        fund.stop(start + 0.58);
+        harmonic.stop(start + 0.1);
+      });
+      return;
+    }
+
+    if (soundId === 'gentle_piano') {
+      const notes = [392.0, 493.88, 587.33, 739.99, 880.0];
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1350, now);
+      filter.connect(ctx.destination);
+
+      notes.forEach((freq, idx) => {
+        const start = now + idx * 0.04;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, start);
+
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.linearRampToValueAtTime(0.11, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.9);
+
+        osc.connect(gain);
+        gain.connect(filter);
+        osc.start(start);
+        osc.stop(start + 1.95);
+      });
+      return;
+    }
+
+    if (soundId === 'digital_pulse') {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(2200, now);
+      filter.connect(ctx.destination);
+
+      const offsets = [0, 0.13, 0.48, 0.61];
+      offsets.forEach((offset) => {
+        const start = now + offset;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(880, start);
+
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.linearRampToValueAtTime(0.09, start + 0.006);
+        gain.gain.setValueAtTime(0.09, start + 0.07);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.095);
+
+        osc.connect(gain);
+        gain.connect(filter);
+        osc.start(start);
+        osc.stop(start + 0.11);
+      });
+      return;
+    }
+
+    if (soundId === 'classic_bell') {
+      const strikes = [0, 0.42];
+      const partials: Array<[number, number]> = [
+        [1046.5, 0.14],
+        [2093.0, 0.075],
+        [3135.96, 0.035],
+      ];
+      strikes.forEach((strikeOffset) => {
+        const start = now + strikeOffset;
+        partials.forEach(([freq, peak]) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, start);
+
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.linearRampToValueAtTime(peak, start + 0.008);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.7);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + 1.75);
+        });
+      });
+      return;
+    }
+
+    // Default: 'crystal_chime'
     const notes = [523.25, 659.25, 783.99, 987.77];
 
     notes.forEach((freq, idx) => {
@@ -606,17 +783,17 @@ class AudioEngine {
     });
   }
 
-  public startContinuousAlarm(): void {
+  public startContinuousAlarm(soundId: AlarmSoundId = 'crystal_chime'): void {
     this.stopContinuousAlarm();
     this.continuousAlarmStartedAt = Date.now();
-    this.playTimerDoneChime();
+    this.playTimerDoneChime(soundId);
 
     this.continuousAlarmTimer = window.setInterval(() => {
       if (Date.now() - this.continuousAlarmStartedAt >= 5 * 60 * 1000) {
         this.stopContinuousAlarm();
         return;
       }
-      this.playTimerDoneChime();
+      this.playTimerDoneChime(soundId);
     }, 3400);
   }
 

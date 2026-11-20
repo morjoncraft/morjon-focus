@@ -646,7 +646,15 @@ export async function mergeAndSyncWithCloud(
   }
   for (const lt of nonSeedLocalTasks) {
     const existing = mergedTaskMap.get(lt.id);
-    mergedTaskMap.set(lt.id, existing ? pickNewer(lt, existing) : lt);
+    if (existing) {
+      const winner = pickNewer(lt, existing);
+      mergedTaskMap.set(lt.id, {
+        ...winner,
+        project_id: lt.project_id ?? existing.project_id ?? null,
+      });
+    } else {
+      mergedTaskMap.set(lt.id, lt);
+    }
   }
 
   const mergedLists = pruneExpiredTombstones(Array.from(mergedListMap.values())).sort(

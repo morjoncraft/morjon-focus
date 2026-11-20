@@ -42,6 +42,7 @@ export const HeroTimer: React.FC<HeroTimerProps> = ({
 }) => {
   const settings = useFocusStore((s) => s.settings);
   const theme = useFocusStore((s) => s.theme);
+  const projects = useFocusStore((s) => s.projects);
   const isTimerRunning = useFocusStore((s) => s.isTimerRunning);
   const completedPomodoroCount = useFocusStore((s) => s.completedPomodoroCount);
   const longBreakSuggestionPending = useFocusStore((s) => s.longBreakSuggestionPending);
@@ -133,6 +134,7 @@ export const HeroTimer: React.FC<HeroTimerProps> = ({
 
   const taskHex = normalizeHex(activeTask.color);
   const accentHex = taskHex ?? settings.accentColor;
+  const activeProject = projects.find((p) => !p.deleted_at && p.id === activeTask.project_id) ?? null;
   const ringHex = settings.accentColor;
   const isOvertime = activeTask.remaining_seconds < 0;
   const overtimeSeconds = isOvertime ? Math.abs(activeTask.remaining_seconds) : 0;
@@ -348,10 +350,22 @@ export const HeroTimer: React.FC<HeroTimerProps> = ({
               {activeTask.emoji}
             </span>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                   {t(lang, 'currentFocus')}
                 </span>
+                {activeProject && (
+                  <span
+                    style={{
+                      backgroundColor: hexToRgba(activeProject.color, isDark ? 0.24 : 0.14),
+                      color: isDark ? '#f4f4f5' : '#18181b',
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                  >
+                    <span>{activeProject.emoji}</span>
+                    <span className="max-w-[140px] truncate">{activeProject.name}</span>
+                  </span>
+                )}
                 {isOvertime ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-300 animate-overtime-pulse">
                     {t(lang, 'overtime')}

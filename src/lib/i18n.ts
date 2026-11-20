@@ -24,10 +24,12 @@ export const DEFAULT_SETTINGS: FocusSettings = {
   reverseCompletedOrder: true,
   loadPresetsToTop: false,
   showFabButton: true,
+  showCompletedInFocus: false,
 
   // Alarms & Sounds
   visualAlarm: true,
   audioAlarm: true,
+  alarmSound: 'crystal_chime',
   audioAlarmContinuous: false,
   audioAlarmNag: true,
   soundscapeOnlyWhenRunning: false,
@@ -125,10 +127,12 @@ const DICT = {
     customPacks: 'Your Custom Packs',
 
     // Quick Add
-    quickAddPlaceholder: 'Add a task... e.g. Read 20 pages 30m',
+    quickAddPlaceholder: 'Add one or multiple tasks... e.g. Study 10m Break 5m Code 15m',
     add: 'Add',
     defaultTimeShort: 'Default:',
-    quickAddTip: 'Tip: end with 30m, 1h 15m, or 25',
+    quickAddTip: 'Tip: paste a list or type "Study 10m Break 5m" to add in bulk',
+    bulkDetectedBadge: 'tasks detected',
+    addBulkBtn: 'Add All',
 
     // Task Queue
     upNext: 'Up Next',
@@ -409,6 +413,53 @@ const DICT = {
     newPresetPlaceholder: 'New preset name...',
     addTaskToPresetPlaceholder: 'Add step or task... e.g. Stretch 10m',
     saveActiveListBtn: 'Save Current List as Preset',
+
+    // Inline Completed in Focus
+    showCompletedInFocusTitle: 'Show Completed Tasks at Bottom of Focus',
+    showCompletedInFocusDesc:
+      'Display a collapsible list of today’s finished tasks right below Quick Add.',
+    focusCompletedHeader: 'Completed Today',
+    showCompletedHereBtn: 'Show completed tasks here',
+    hideFromFocusBtn: 'Hide from Focus',
+
+    // Alarm Sounds
+    alarmSoundTitle: 'Alarm Sound',
+    alarmSoundDesc: 'Choose the melody played when a focus timer finishes.',
+    previewAlarmBtn: 'Preview',
+    alarmCrystalChime: 'Crystal Chime',
+    alarmSoftHarp: 'Soft Harp',
+    alarmSingingBowl: 'Tibetan Singing Bowl',
+    alarmWarmMarimba: 'Warm Marimba',
+    alarmGentlePiano: 'Gentle Piano Chord',
+    alarmDigitalPulse: 'Classic Digital Beep',
+    alarmClassicBell: 'Bright Desk Bell',
+
+    // Daily / Weekly / Monthly Archive & Projects
+    periodDaily: 'Daily',
+    periodWeekly: 'Weekly',
+    periodMonthly: 'Monthly',
+    periodAll: 'All Time',
+    todayGroupLabel: 'Today',
+    yesterdayGroupLabel: 'Yesterday',
+    distByProjects: 'By Projects',
+    projectsSectionTitle: 'Projects & Time Invested',
+    projectsSectionDesc:
+      'Assign tasks to projects to track total time invested, completed parts, and average session length.',
+    projectLabel: 'Project',
+    projectNone: 'No Project',
+    assignProject: 'Assign Project',
+    allProjectsFilter: 'All Projects',
+    unassignedProjectFilter: 'Unassigned Tasks',
+    newProjectPlaceholder: 'New project name...',
+    createProjectBtn: 'Create Project',
+    noProjectsYet:
+      'No projects yet. Create one above or from Quick Add to track multi-part work.',
+    partsCompletedUnit: 'parts done',
+    partsPendingUnit: 'pending',
+    avgPartLabel: 'Avg / part',
+    totalInvestedLabel: 'Total Time',
+    periodSummaryTasks: 'completed',
+    noCompletedInPeriod: 'No completed tasks match this period/filter.',
   },
   tr: {
     appTitle: 'Morjon Focus',
@@ -472,10 +523,12 @@ const DICT = {
     customPacks: 'Özel Paketlerin',
 
     // Quick Add
-    quickAddPlaceholder: 'Görev ekle... ör: Kitap oku 30m',
+    quickAddPlaceholder: 'Tek veya toplu görev ekle... ör: Ders 10m Mola 5m Kodlama 15m',
     add: 'Ekle',
     defaultTimeShort: 'Varsayılan:',
-    quickAddTip: 'İpucu: Sonuna 30m, 1h 15m veya 25 yaz',
+    quickAddTip: 'İpucu: "Ders 10m Mola 5m" yazarak tek seferde çoklu görev ekleyebilirsin',
+    bulkDetectedBadge: 'görev algılandı',
+    addBulkBtn: 'Tümünü Ekle',
 
     // Task Queue
     upNext: 'Sıradaki Görevler',
@@ -756,6 +809,53 @@ const DICT = {
     newPresetPlaceholder: 'Yeni şablon adı...',
     addTaskToPresetPlaceholder: 'Şablona adım ekle... ör: Esneme 10m',
     saveActiveListBtn: 'Aktif Odak Listesini Şablon Yap',
+
+    // Inline Completed in Focus
+    showCompletedInFocusTitle: 'Tamamlananları Odak Bölümünün Altında Göster',
+    showCompletedInFocusDesc:
+      'Bugün tamamlanan görevleri Odak ekranının en altında açılır/kapanır olarak göster.',
+    focusCompletedHeader: 'Bugün Tamamlananlar',
+    showCompletedHereBtn: 'Tamamlananları burada göster',
+    hideFromFocusBtn: 'Odaktan gizle',
+
+    // Alarm Sounds
+    alarmSoundTitle: 'Alarm Sesi',
+    alarmSoundDesc: 'Odak sayacı bittiğinde çalacak alarm sesini seç.',
+    previewAlarmBtn: 'Dinle',
+    alarmCrystalChime: 'Kristal Çan',
+    alarmSoftHarp: 'Yumuşak Arp',
+    alarmSingingBowl: 'Tibet Çanağı',
+    alarmWarmMarimba: 'Ahşap Marimba',
+    alarmGentlePiano: 'Yumuşak Piyano',
+    alarmDigitalPulse: 'Dijital Masa Saati',
+    alarmClassicBell: 'Klasik Masa Zili',
+
+    // Daily / Weekly / Monthly Archive & Projects
+    periodDaily: 'Günlük',
+    periodWeekly: 'Haftalık',
+    periodMonthly: 'Aylık',
+    periodAll: 'Tümü',
+    todayGroupLabel: 'Bugün',
+    yesterdayGroupLabel: 'Dün',
+    distByProjects: 'Projelere Göre',
+    projectsSectionTitle: 'Projeler & Harcanan Zaman',
+    projectsSectionDesc:
+      'Görevleri projelere atayarak bir işe toplam ne kadar zaman ayırdığını ve kaç parçada tamamladığını takip et.',
+    projectLabel: 'Proje',
+    projectNone: 'Projesiz',
+    assignProject: 'Proje Ata',
+    allProjectsFilter: 'Tüm Projeler',
+    unassignedProjectFilter: 'Projesiz Görevler',
+    newProjectPlaceholder: 'Yeni proje adı...',
+    createProjectBtn: 'Proje Ekle',
+    noProjectsYet:
+      'Henüz proje eklenmedi. Çok parçalı işlerini takip etmek için yukarıdan veya görev eklerken proje oluşturabilirsin.',
+    partsCompletedUnit: 'parça bitti',
+    partsPendingUnit: 'bekleyen',
+    avgPartLabel: 'Ort. parça',
+    totalInvestedLabel: 'Toplam Süre',
+    periodSummaryTasks: 'tamamlandı',
+    noCompletedInPeriod: 'Seçili dönem ve proje filtresinde tamamlanmış görev yok.',
   },
 } as const;
 

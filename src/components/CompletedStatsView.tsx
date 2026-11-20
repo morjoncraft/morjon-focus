@@ -4,42 +4,92 @@ import {
   CalendarDays,
   CheckCircle2,
   Flame,
+  FolderKanban,
   PieChart,
+  Plus,
   RotateCcw,
   Target,
   Trash2,
 } from 'lucide-react';
-import { hexToRgba } from '../lib/colors';
+import { ACCENT_SWATCHES, hexToRgba } from '../lib/colors';
 import {
   buildYearlyHeatmap,
   computeFocusDistribution,
+  computeProjectStats,
   computeStreakStats,
+  filterCompletedTasks,
+  getEffectiveTaskSpentSeconds,
   type HeatmapCell,
 } from '../lib/focusAnalytics';
 import { formatListDuration, getLocalDateKey } from '../lib/formatters';
 import { t } from '../lib/i18n';
 import { useFocusStore } from '../store/useFocusStore';
+import type { CompletedPeriod } from '../types';
 
 const GOAL_PRESET_MINUTES = [60, 120, 180, 240];
+const PROJECT_EMOJIS = ['📁', '🚀', '💻', '📚', '🎨', '💼', '🔬', '🏠'];
 
 export const CompletedStatsView: React.FC = () => {
   const lists = useFocusStore((s) => s.lists);
   const tasks = useFocusStore((s) => s.tasks);
+  const projects = useFocusStore((s) => s.projects);
+  const theme = useFocusStore((s) => s.theme);
   const dailyFocusSeconds = useFocusStore((s) => s.dailyFocusSeconds);
   const dailyCategoryFocus = useFocusStore((s) => s.dailyCategoryFocus);
   const settings = useFocusStore((s) => s.settings);
   const updateSettings = useFocusStore((s) => s.updateSettings);
+  const createProject = useFocusStore((s) => s.createProject);
+  const deleteProject = useFocusStore((s) => s.deleteProject);
   const uncompleteTask = useFocusStore((s) => s.uncompleteTask);
   const deleteTask = useFocusStore((s) => s.deleteTask);
   const clearCompletedTasks = useFocusStore((s) => s.clearCompletedTasks);
 
-  const [distMode, setDistMode] = useState<'list' | 'color'>('list');
+  const [distMode, setDistMode] = useState<'list' | 'project' | 'color'>('list');
   const [distRange, setDistRange] = useState<'7d' | 'all'>('7d');
   const [inspectedCell, setInspectedCell] = useState<HeatmapCell | null>(null);
 
+  const [archivePeriod, setArchivePeriod] = useState<CompletedPeriod>(() => {
+    const dailyCount = filterCompletedTasks({
+      tasks,
+      period: 'daily',
+      projectFilter: 'all',
+      reverseOrder: true,
+    }).length;
+    if (dailyCount > 0) return 'daily';
+    const weeklyCount = filterCompletedTasks({
+      tasks,
+      period: 'weekly',
+      projectFilter: 'all',
+      reverseOrder: true,
+    }).length;
+    return weeklyCount > 0 ? 'weekly' : 'all';
+  });
+  const [projectFilter, setProjectFilter] = useState<string>('all');
+  const [newProjName, setNewProjName] = useState('');
+  const [newProjEmoji, setNewProjEmoji] = useState('📁');
+  const [newProjColor, setNewProjColor] = useState<string>(ACCENT_SWATCHES[0]);
+
   const lang = settings.language;
+  const isDark = theme === 'dark';
   const todayKey = getLocalDateKey();
   const goalMinutes = Math.max(15, settings.dailyGoalMinutes || 120);
+
+  const activeProjects = useMemo(
+    () => projects.filter((p) => !p.deleted_at),
+    [projects],
+  );
+
+  const projectMap = useMemo(
+    () => new Map(activeProjects.map((p) => [p.id, p])),
+    [activeProjects],
+  );
+
+  const listMap = useMemo(() => new Map(lists.map((l) => [l.id, l])), [lists]);
+
+  const projectSummaries = useMemo(
+    () => computeProjectStats(projects, tasks, 'all'),
+    [projects, tasks],
+  );
 
   const streakStats = useMemo(
     () => computeStreakStats(dailyFocusSeconds, goalMinutes),
@@ -59,25 +109,123 @@ export const CompletedStatsView: React.FC = () => {
         dailyCategoryFocus,
         tasks,
         lists,
+        projects,
         lang,
       }),
-    [distMode, distRange, dailyCategoryFocus, tasks, lists, lang],
+    [distMode, distRange, dailyCategoryFocus, tasks, lists, projects, lang],
   );
 
-  const completedTasks = tasks
-    .filter((item) => !item.deleted_at && item.status === 'completed')
-    .sort((a, b) => {
-      const aTime = a.completed_at ?? a.updated_at;
-      const bTime = b.completed_at ?? b.updated_at;
-      return settings.reverseCompletedOrder
-        ? bTime.localeCompare(aTime)
-        : aTime.localeCompare(bTime);
-    });
+  const periodCounts = useMemo(
+    () => ({
+      daily: filterCompletedTasks({
+        tasks,
+        period: 'daily',
+        projectFilter,
+        reverseOrder: settings.reverseCompletedOrder,
+      }).length,
+      weekly: filterCompletedTasks({
+        tasks,
+        period: 'weekly',
+        projectFilter,
+        reverseOrder: settings.reverseCompletedOrder,
+      }).length,
+      monthly: filterCompletedTasks({
+        tasks,
+        period: 'monthly',
+        projectFilter,
+        reverseOrder: settings.reverseCompletedOrder,
+      }).length,
+      all: filterCompletedTasks({
+        tasks,
+        period: 'all',
+        projectFilter,
+        reverseOrder: settings.reverseCompletedOrder,
+      }).length,
+    }),
+    [tasks, projectFilter, settings.reverseCompletedOrder],
+  );
 
-  const completedToday = completedTasks.filter((item) => {
-    if (!item.completed_at) return false;
-    return getLocalDateKey(new Date(item.completed_at)) === todayKey;
-  });
+  const filteredCompleted = useMemo(
+    () =>
+      filterCompletedTasks({
+        tasks,
+        period: archivePeriod,
+        projectFilter,
+        reverseOrder: settings.reverseCompletedOrder,
+      }),
+    [tasks, archivePeriod, projectFilter, settings.reverseCompletedOrder],
+  );
+
+  const filteredTotalSeconds = useMemo(
+    () =>
+      filteredCompleted.reduce((sum, item) => sum + getEffectiveTaskSpentSeconds(item), 0),
+    [filteredCompleted],
+  );
+
+  const completedTodayCount = useMemo(
+    () =>
+      filterCompletedTasks({
+        tasks,
+        period: 'daily',
+        projectFilter: 'all',
+        reverseOrder: true,
+      }).length,
+    [tasks],
+  );
+
+  const groupedByDay = useMemo(() => {
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayKey = getLocalDateKey(yesterdayDate);
+    const locale = lang === 'tr' ? 'tr-TR' : 'en-US';
+
+    const groups: Array<{
+      dateKey: string;
+      label: string;
+      totalSeconds: number;
+      items: typeof filteredCompleted;
+    }> = [];
+    const byKey = new Map<string, (typeof groups)[number]>();
+
+    for (const item of filteredCompleted) {
+      const stamp = item.completed_at ?? item.updated_at;
+      const d = new Date(stamp);
+      const dateKey = getLocalDateKey(d);
+      let group = byKey.get(dateKey);
+      if (!group) {
+        const label =
+          dateKey === todayKey
+            ? t(lang, 'todayGroupLabel')
+            : dateKey === yesterdayKey
+              ? t(lang, 'yesterdayGroupLabel')
+              : d.toLocaleDateString(locale, {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                });
+        group = { dateKey, label, totalSeconds: 0, items: [] };
+        byKey.set(dateKey, group);
+        groups.push(group);
+      }
+      group.items.push(item);
+      group.totalSeconds += getEffectiveTaskSpentSeconds(item);
+    }
+
+    return groups;
+  }, [filteredCompleted, lang, todayKey]);
+
+  const selectedProjectStat =
+    projectFilter !== 'all' && projectFilter !== '__none__'
+      ? projectSummaries.find((s) => s.project.id === projectFilter) ?? null
+      : null;
+
+  const handleCreateProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = newProjName.trim();
+    if (!cleaned) return;
+    createProject(cleaned, newProjEmoji, newProjColor);
+    setNewProjName('');
+  };
 
   const last7Days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -224,7 +372,7 @@ export const CompletedStatsView: React.FC = () => {
             <span>{t(lang, 'completedTodayCard')}</span>
           </div>
           <div className="mt-1.5 text-2xl sm:text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
-            {completedToday.length}{' '}
+            {completedTodayCount}{' '}
             <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
               {t(lang, 'tasksSuffix')}
             </span>
@@ -260,6 +408,17 @@ export const CompletedStatsView: React.FC = () => {
                 }`}
               >
                 {t(lang, 'distByLists')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDistMode('project')}
+                className={`rounded-md px-2.5 py-1 transition ${
+                  distMode === 'project'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                }`}
+              >
+                {t(lang, 'distByProjects')}
               </button>
               <button
                 type="button"
@@ -522,73 +681,362 @@ export const CompletedStatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Row 5: Completed Tasks Archive */}
-      <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/90 p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-            {t(lang, 'completedArchive')} ({completedTasks.length})
-          </h3>
-          {completedTasks.length > 0 && (
-            <button
-              type="button"
-              onClick={clearCompletedTasks}
-              className="text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline"
-            >
-              {t(lang, 'clearArchive')}
-            </button>
-          )}
+      {/* Row 5: Projects & Time Invested */}
+      <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/90 p-4 shadow-sm space-y-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <FolderKanban className="h-4 w-4 text-sky-500" />
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              {t(lang, 'projectsSectionTitle')} ({activeProjects.length})
+            </h3>
+          </div>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            {t(lang, 'projectsSectionDesc')}
+          </p>
         </div>
 
-        {completedTasks.length === 0 ? (
-          <p className="py-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
-            {t(lang, 'noCompletedYet')}
+        {/* Create New Project Bar */}
+        <form onSubmit={handleCreateProject} className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 p-1">
+            {PROJECT_EMOJIS.slice(0, 5).map((em) => (
+              <button
+                key={em}
+                type="button"
+                onClick={() => setNewProjEmoji(em)}
+                className={`h-7 w-7 rounded-md text-sm transition ${
+                  newProjEmoji === em
+                    ? 'bg-violet-500/20 ring-1 ring-violet-500'
+                    : 'hover:bg-zinc-200/60 dark:hover:bg-zinc-800'
+                }`}
+              >
+                {em}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-2 py-1.5">
+            {ACCENT_SWATCHES.slice(0, 6).map((hex) => (
+              <button
+                key={hex}
+                type="button"
+                onClick={() => setNewProjColor(hex)}
+                style={{ backgroundColor: hex }}
+                className={`h-4 w-4 rounded-full transition ${
+                  newProjColor === hex
+                    ? 'ring-2 ring-offset-1 ring-zinc-900 dark:ring-white scale-110'
+                    : 'opacity-80 hover:opacity-100'
+                }`}
+                aria-label={hex}
+              />
+            ))}
+          </div>
+
+          <div className="flex flex-1 min-w-[180px] items-center gap-2">
+            <input
+              type="text"
+              value={newProjName}
+              onChange={(e) => setNewProjName(e.target.value)}
+              placeholder={t(lang, 'newProjectPlaceholder')}
+              className="h-9 flex-1 min-w-0 rounded-xl bg-zinc-100 dark:bg-zinc-800 px-3 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+            />
+            <button
+              type="submit"
+              disabled={!newProjName.trim()}
+              style={{ backgroundColor: settings.accentColor }}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white disabled:opacity-40 hover:brightness-110 transition"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>{t(lang, 'createProjectBtn')}</span>
+            </button>
+          </div>
+        </form>
+
+        {projectSummaries.length === 0 ? (
+          <p className="py-3 text-center text-xs text-zinc-500 dark:text-zinc-400">
+            {t(lang, 'noProjectsYet')}
           </p>
         ) : (
-          <div className="space-y-2">
-            {completedTasks.map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center justify-between gap-2 rounded-xl border border-zinc-200/70 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 px-3 py-2"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="text-base shrink-0">{task.emoji}</span>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-zinc-600 dark:text-zinc-300 line-through">
-                      {task.title}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {projectSummaries.map((stat) => {
+              const isSelected = projectFilter === stat.project.id;
+              return (
+                <div
+                  key={stat.project.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() =>
+                    setProjectFilter((cur) => (cur === stat.project.id ? 'all' : stat.project.id))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setProjectFilter((cur) =>
+                        cur === stat.project.id ? 'all' : stat.project.id,
+                      );
+                    }
+                  }}
+                  style={
+                    isSelected
+                      ? {
+                          borderColor: stat.project.color,
+                          backgroundColor: hexToRgba(stat.project.color, isDark ? 0.16 : 0.09),
+                        }
+                      : undefined
+                  }
+                  className={`group rounded-xl border p-3 transition cursor-pointer ${
+                    isSelected
+                      ? 'shadow-sm'
+                      : 'border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/75 dark:bg-zinc-950/45 hover:border-zinc-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base"
+                        style={{
+                          backgroundColor: hexToRgba(stat.project.color, isDark ? 0.24 : 0.16),
+                        }}
+                      >
+                        {stat.project.emoji}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                          {stat.project.name}
+                        </div>
+                        <div className="text-[11px] font-mono font-bold text-zinc-700 dark:text-zinc-200">
+                          {formatListDuration(stat.totalSpentSeconds, lang)}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                      {t(lang, 'focusLabel')}:{' '}
-                      {formatListDuration(task.actual_focused_seconds, lang)}
-                      {task.completed_at
-                        ? ` • ${new Date(task.completed_at).toLocaleTimeString(
-                            lang === 'tr' ? 'tr-TR' : 'en-US',
-                            {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              hour12: !settings.use24HourTime,
-                            },
-                          )}`
-                        : ''}
-                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (projectFilter === stat.project.id) {
+                          setProjectFilter('all');
+                        }
+                        deleteProject(stat.project.id);
+                      }}
+                      className="opacity-70 sm:opacity-0 group-hover:opacity-100 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-rose-500/15 hover:text-rose-500 transition"
+                      title={t(lang, 'deleteTask')}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                    <span>
+                      <strong className="text-zinc-800 dark:text-zinc-200">
+                        {stat.allTimeCompletedParts}
+                      </strong>{' '}
+                      {t(lang, 'partsCompletedUnit')}
+                    </span>
+                    {stat.pendingParts > 0 && (
+                      <span>
+                        • {stat.pendingParts} {t(lang, 'partsPendingUnit')}
+                      </span>
+                    )}
+                    {stat.avgPartSeconds > 0 && (
+                      <span>
+                        • {t(lang, 'avgPartLabel')}:{' '}
+                        <strong className="text-zinc-800 dark:text-zinc-200">
+                          {formatListDuration(stat.avgPartSeconds, lang)}
+                        </strong>
+                      </span>
+                    )}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => uncompleteTask(task.id)}
-                    className="inline-flex h-7 items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 text-[11px] font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                    <span className="hidden sm:inline">{t(lang, 'restoreTask')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteTask(task.id)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-rose-500/15 hover:text-rose-500 transition"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+      {/* Row 6: Completed Tasks Archive (Daily / Weekly / Monthly + Project Filter) */}
+      <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/90 p-4 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            {t(lang, 'completedArchive')} ({filteredCompleted.length})
+          </h3>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Project Filter Select */}
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              aria-label={t(lang, 'projectLabel')}
+              className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-2 text-xs font-semibold text-zinc-800 dark:text-zinc-200 focus:outline-none"
+            >
+              <option value="all">{t(lang, 'allProjectsFilter')}</option>
+              <option value="__none__">{t(lang, 'unassignedProjectFilter')}</option>
+              {activeProjects.map((proj) => (
+                <option key={proj.id} value={proj.id}>
+                  {proj.emoji} {proj.name}
+                </option>
+              ))}
+            </select>
+
+            {periodCounts.all > 0 && (
+              <button
+                type="button"
+                onClick={clearCompletedTasks}
+                className="text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline px-1"
+              >
+                {t(lang, 'clearArchive')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Period Tabs: Daily / Weekly / Monthly / All */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="inline-flex flex-wrap rounded-xl bg-zinc-100 dark:bg-zinc-800 p-1 gap-1 text-xs font-semibold">
+            {(
+              [
+                { id: 'daily', label: t(lang, 'periodDaily'), count: periodCounts.daily },
+                { id: 'weekly', label: t(lang, 'periodWeekly'), count: periodCounts.weekly },
+                { id: 'monthly', label: t(lang, 'periodMonthly'), count: periodCounts.monthly },
+                { id: 'all', label: t(lang, 'periodAll'), count: periodCounts.all },
+              ] as const
+            ).map((tabItem) => (
+              <button
+                key={tabItem.id}
+                type="button"
+                onClick={() => setArchivePeriod(tabItem.id)}
+                className={`rounded-lg px-2.5 py-1 transition ${
+                  archivePeriod === tabItem.id
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                }`}
+              >
+                {tabItem.label}{' '}
+                <span className="font-mono text-[11px] opacity-75">({tabItem.count})</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Summary Pill for selected Period & Project */}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-zinc-100/80 dark:bg-zinc-800/75 px-3 py-1.5 text-xs">
+            <span>
+              <strong className="font-mono text-zinc-900 dark:text-zinc-100">
+                {filteredCompleted.length}
+              </strong>{' '}
+              <span className="text-zinc-500 dark:text-zinc-400">
+                {t(lang, 'periodSummaryTasks')}
+              </span>
+            </span>
+            <span className="text-zinc-400">•</span>
+            <span>
+              <span className="text-zinc-500 dark:text-zinc-400">
+                {t(lang, 'totalInvestedLabel')}:
+              </span>{' '}
+              <strong className="font-mono text-zinc-900 dark:text-zinc-100">
+                {formatListDuration(filteredTotalSeconds, lang)}
+              </strong>
+            </span>
+            {selectedProjectStat && filteredCompleted.length > 0 && (
+              <>
+                <span className="text-zinc-400">•</span>
+                <span>
+                  <span className="text-zinc-500 dark:text-zinc-400">
+                    {t(lang, 'avgPartLabel')}:
+                  </span>{' '}
+                  <strong className="font-mono text-zinc-900 dark:text-zinc-100">
+                    {formatListDuration(
+                      Math.round(filteredTotalSeconds / filteredCompleted.length),
+                      lang,
+                    )}
+                  </strong>
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {filteredCompleted.length === 0 ? (
+          <p className="py-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
+            {t(lang, 'noCompletedInPeriod')}
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {groupedByDay.map((group) => (
+              <div key={group.dateKey} className="space-y-1.5">
+                <div className="flex items-center justify-between px-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                  <span>{group.label}</span>
+                  <span className="font-mono">
+                    {group.items.length} {t(lang, 'tasksSuffix')} •{' '}
+                    {formatListDuration(group.totalSeconds, lang)}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {group.items.map((task) => {
+                    const proj = task.project_id ? projectMap.get(task.project_id) : undefined;
+                    const taskList = task.list_id ? listMap.get(task.list_id) : undefined;
+                    const spentSec = getEffectiveTaskSpentSeconds(task);
+                    return (
+                      <div
+                        key={task.id}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-zinc-200/70 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-base shrink-0">{task.emoji}</span>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                              <span className="truncate text-sm font-medium text-zinc-600 dark:text-zinc-300 line-through">
+                                {task.title}
+                              </span>
+                              {proj && (
+                                <span
+                                  style={{
+                                    backgroundColor: hexToRgba(proj.color, isDark ? 0.22 : 0.14),
+                                    color: isDark ? '#f4f4f5' : '#18181b',
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                                >
+                                  <span>{proj.emoji}</span>
+                                  <span className="max-w-[120px] truncate">{proj.name}</span>
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                              {t(lang, 'focusLabel')}: {formatListDuration(spentSec, lang)}
+                              {taskList ? ` • ${taskList.emoji} ${taskList.name}` : ''}
+                              {task.completed_at
+                                ? ` • ${new Date(task.completed_at).toLocaleTimeString(
+                                    lang === 'tr' ? 'tr-TR' : 'en-US',
+                                    {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      hour12: !settings.use24HourTime,
+                                    },
+                                  )}`
+                                : ''}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => uncompleteTask(task.id)}
+                            className="inline-flex h-7 items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 text-[11px] font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            <span className="hidden sm:inline">{t(lang, 'restoreTask')}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteTask(task.id)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-rose-500/15 hover:text-rose-500 transition"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}

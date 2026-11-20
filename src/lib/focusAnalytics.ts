@@ -1,9 +1,11 @@
 import { ACCENT_SWATCHES, getFriendlyColorLabel, normalizeHex } from './colors';
 import { getLocalDateKey } from './formatters';
 import type {
+  CompletedPeriod,
   DailyCategoryFocusMap,
   DailyFocusMap,
   Language,
+  Project,
   Task,
   TaskList,
 } from '../types';
@@ -229,11 +231,12 @@ const LIST_CHART_COLORS = [
 ];
 
 export function computeFocusDistribution(params: {
-  mode: 'list' | 'color';
+  mode: 'list' | 'project' | 'color';
   range: '7d' | 'all';
   dailyCategoryFocus: DailyCategoryFocusMap;
   tasks: Task[];
   lists: TaskList[];
+  projects?: Project[];
   lang: Language;
   today?: Date;
 }): FocusDistributionData {
@@ -243,6 +246,7 @@ export function computeFocusDistribution(params: {
     dailyCategoryFocus,
     tasks,
     lists,
+    projects = [],
     lang,
     today = new Date(),
   } = params;
@@ -260,17 +264,24 @@ export function computeFocusDistribution(params: {
 
   for (const [dateKey, bucket] of Object.entries(dailyCategoryFocus ?? {})) {
     if (range === '7d' && !allowedDateKeys.has(dateKey)) continue;
-    recordedDateKeys.add(dateKey);
-    const source = mode === 'list' ? bucket.byList : bucket.byColor;
-    for (const [k, sec] of Object.entries(source ?? {})) {
-      if (sec <= 0) continue;
-      bucketTotals.set(k, (bucketTotals.get(k) ?? 0) + sec);
+    const source =
+      mode === 'list' ? bucket.byList : mode === 'project' ? bucket.byProject : bucket.byColor;
+    if (source && Object.keys(source).length > 0) {
+      recordedDateKeys.add(dateKey);
+      for (const [k, sec] of Object.entries(source)) {
+        if (sec <= 0) continue;
+        bucketTotals.set(k, (bucketTotals.get(k) ?? 0) + sec);
+      }
     }
   }
 
-  // Fallback for tasks focused before dailyCategoryFocus was recorded
+  // Fallback for tasks focused before category buckets were recorded (or quick-completed tasks)
   for (const task of tasks) {
-    if (task.deleted_at || task.actual_focused_seconds <= 0) continue;
+    if (task.deleted_at) continue;
+    const spentSec =
+      mode === 'project' ? getEffectiveTaskSpentSeconds(task) : Math.max(0, task.actual_focused_seconds);
+    if (spentSec <= 0) continue;
+
     const stamp = task.completed_at ?? task.updated_at;
     const taskDate = stamp ? new Date(stamp) : todayMidnight;
     const dateKey = getLocalDateKey(taskDate);
@@ -281,11 +292,14 @@ export function computeFocusDistribution(params: {
     const rawKey =
       mode === 'list'
         ? (task.list_id ?? '__none__')
-        : (normalizeHex(task.color) ?? '__none__');
-    bucketTotals.set(rawKey, (bucketTotals.get(rawKey) ?? 0) + task.actual_focused_seconds);
+        : mode === 'project'
+          ? (task.project_id ?? '__none__')
+          : (normalizeHex(task.color) ?? '__none__');
+    bucketTotals.set(rawKey, (bucketTotals.get(rawKey) ?? 0) + spentSec);
   }
 
   const listMap = new Map(lists.map((l) => [l.id, l]));
+  const projectMap = new Map(projects.filter((p) => !p.deleted_at).map((p) => [p.id, p]));
   const totalSeconds = Array.from(bucketTotals.values()).reduce((sum, s) => sum + s, 0);
 
   if (totalSeconds <= 0) {
@@ -317,6 +331,20 @@ export function computeFocusDistribution(params: {
         existing.seconds += seconds;
       } else {
         mergedDisplay.set(label, { id: key, label, colorHex: stableHex, seconds });
+      }
+    } else if (mode === 'project') {
+      const project = key !== '__none__' ? projectMap.get(key) : undefined;
+      const label = project
+        ? `${project.emoji} ${project.name}`
+        : lang === 'tr'
+          ? 'Projesiz Görevler'
+          : 'No Project';
+      const colorHex = project ? project.color || ACCENT_SWATCHES[0] : '#71717a';
+      const existing = mergedDisplay.get(label);
+      if (existing) {
+        existing.seconds += seconds;
+      } else {
+        mergedDisplay.set(label, { id: key, label, colorHex, seconds });
       }
     } else {
       const info = getFriendlyColorLabel(key, lang);
@@ -352,4 +380,132 @@ export function computeFocusDistribution(params: {
   }));
 
   return { totalSeconds, slices };
+}
+
+export function getEffectiveTaskSpentSeconds(task: Task): number {
+  if (task.status === 'completed') {
+    return task.actual_focused_seconds > 0
+      ? task.actual_focused_seconds
+      : Math.max(0, task.duration_seconds);
+  }
+  return Math.max(0, task.actual_focused_seconds);
+}
+
+export function isCompletedWithinPeriod(
+  completedAtIso: string | null,
+  period: CompletedPeriod,
+  today: Date = new Date(),
+): boolean {
+  if (period === 'all') return true;
+  if (!completedAtIso) return false;
+  const parsed = new Date(completedAtIso);
+  if (!Number.isFinite(parsed.getTime())) return false;
+
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (period === 'daily') {
+    return getLocalDateKey(parsed) === getLocalDateKey(todayMidnight);
+  }
+
+  const dayMidnight = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  const windowDays = period === 'weekly' ? -6 : -29;
+  const startCutoff = addDaysLocal(todayMidnight, windowDays).getTime();
+  return dayMidnight.getTime() >= startCutoff && dayMidnight.getTime() <= todayMidnight.getTime();
+}
+
+export function filterCompletedTasks(params: {
+  tasks: Task[];
+  period: CompletedPeriod;
+  projectFilter: string;
+  reverseOrder: boolean;
+  today?: Date;
+}): Task[] {
+  const { tasks, period, projectFilter, reverseOrder, today = new Date() } = params;
+
+  return tasks
+    .filter((item) => {
+      if (item.deleted_at || item.status !== 'completed') return false;
+      const stamp = item.completed_at ?? item.updated_at;
+      if (!isCompletedWithinPeriod(stamp, period, today)) return false;
+
+      if (projectFilter === '__none__') {
+        return !item.project_id;
+      }
+      if (projectFilter !== 'all') {
+        return item.project_id === projectFilter;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const aTime = a.completed_at ?? a.updated_at;
+      const bTime = b.completed_at ?? b.updated_at;
+      return reverseOrder ? bTime.localeCompare(aTime) : aTime.localeCompare(bTime);
+    });
+}
+
+export interface ProjectStatSummary {
+  project: Project;
+  completedParts: number;
+  allTimeCompletedParts: number;
+  pendingParts: number;
+  totalSpentSeconds: number;
+  trackedFocusSeconds: number;
+  avgPartSeconds: number;
+}
+
+export function computeProjectStats(
+  projects: Project[],
+  tasks: Task[],
+  period: CompletedPeriod = 'all',
+  today: Date = new Date(),
+): ProjectStatSummary[] {
+  const activeProjects = projects.filter((p) => !p.deleted_at);
+  const liveTasks = tasks.filter((t) => !t.deleted_at && t.project_id);
+
+  const stats: ProjectStatSummary[] = activeProjects.map((project) => {
+    const projectTasks = liveTasks.filter((t) => t.project_id === project.id);
+    const allCompleted = projectTasks.filter((t) => t.status === 'completed');
+    const periodCompleted = allCompleted.filter((t) =>
+      isCompletedWithinPeriod(t.completed_at ?? t.updated_at, period, today),
+    );
+    const pendingTasks = projectTasks.filter((t) => t.status !== 'completed');
+
+    let totalSpentSeconds = 0;
+    let trackedFocusSeconds = 0;
+    let completedSpentInPeriod = 0;
+
+    for (const t of periodCompleted) {
+      const eff = getEffectiveTaskSpentSeconds(t);
+      completedSpentInPeriod += eff;
+      totalSpentSeconds += eff;
+      trackedFocusSeconds += Math.max(0, t.actual_focused_seconds);
+    }
+
+    for (const t of pendingTasks) {
+      if (t.actual_focused_seconds <= 0) continue;
+      if (period === 'all' || isCompletedWithinPeriod(t.updated_at, period, today)) {
+        totalSpentSeconds += t.actual_focused_seconds;
+        trackedFocusSeconds += t.actual_focused_seconds;
+      }
+    }
+
+    const completedParts = periodCompleted.length;
+    const avgPartSeconds =
+      completedParts > 0 ? Math.round(completedSpentInPeriod / completedParts) : 0;
+
+    return {
+      project,
+      completedParts,
+      allTimeCompletedParts: allCompleted.length,
+      pendingParts: pendingTasks.length,
+      totalSpentSeconds,
+      trackedFocusSeconds,
+      avgPartSeconds,
+    };
+  });
+
+  return stats.sort(
+    (a, b) =>
+      b.totalSpentSeconds - a.totalSpentSeconds ||
+      a.project.created_at.localeCompare(b.project.created_at),
+  );
 }

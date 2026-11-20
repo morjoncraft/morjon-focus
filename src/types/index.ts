@@ -73,6 +73,27 @@ export type CornerStyle = 'rounded' | 'pill' | 'sharp';
 
 export type FontStyle = 'sans' | 'rounded' | 'mono';
 
+export type AlarmSoundId =
+  | 'crystal_chime'
+  | 'soft_harp'
+  | 'singing_bowl'
+  | 'warm_marimba'
+  | 'gentle_piano'
+  | 'digital_pulse'
+  | 'classic_bell';
+
+export type CompletedPeriod = 'daily' | 'weekly' | 'monthly' | 'all';
+
+export interface Project {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface SubTask {
   id: string;
   title: string;
@@ -120,10 +141,12 @@ export interface FocusSettings {
   reverseCompletedOrder: boolean;
   loadPresetsToTop: boolean;
   showFabButton: boolean;
+  showCompletedInFocus: boolean;
 
   // Alarms & Sounds
   visualAlarm: boolean;
   audioAlarm: boolean;
+  alarmSound: AlarmSoundId;
   audioAlarmContinuous: boolean;
   audioAlarmNag: boolean;
   soundscapeOnlyWhenRunning: boolean;
@@ -178,6 +201,7 @@ export interface Task {
   id: string;
   user_id?: string;
   list_id: string | null;
+  project_id?: string | null;
   title: string;
   emoji: string;
   color: TaskColor;
@@ -205,6 +229,7 @@ export type DailyFocusMap = Record<string, number>;
 export interface DailyCategoryBucket {
   byList: Record<string, number>;
   byColor: Record<string, number>;
+  byProject?: Record<string, number>;
 }
 
 export type DailyCategoryFocusMap = Record<string, DailyCategoryBucket>;
@@ -219,6 +244,7 @@ export interface BackupData {
   exportedAt: string;
   lists: TaskList[];
   tasks: Task[];
+  projects?: Project[];
   dailyFocusSeconds: DailyFocusMap;
   dailyCategoryFocus?: DailyCategoryFocusMap;
   activeListId: string | null;

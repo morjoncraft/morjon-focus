@@ -536,6 +536,7 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ open, onClose })
               [
                 ['enableMicroStart', t(lang, 'enableMicroStartTitle')],
                 ['hideQueueWhileFocusing', t(lang, 'hideQueueWhileFocusingTitle')],
+                ['showCompletedInFocus', t(lang, 'showCompletedInFocusTitle')],
                 ['showFunToolbar', t(lang, 'toggleFunToolbar')],
                 ['showSummaryInHeader', t(lang, 'toggleHeaderSummary')],
                 ['showQuickMinuteChips', t(lang, 'toggleQuickChips')],

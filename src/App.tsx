@@ -16,6 +16,7 @@ import { CompletedStatsView } from './components/CompletedStatsView';
 import { CustomEmojiThemeModal } from './components/CustomEmojiThemeModal';
 import { CustomizeModal } from './components/CustomizeModal';
 import { HeroTimer } from './components/HeroTimer';
+import { InlineFocusCompleted } from './components/InlineFocusCompleted';
 import { ListsView } from './components/ListsView';
 import { Navbar } from './components/Navbar';
 import { NotNowView } from './components/NotNowView';
@@ -654,9 +655,11 @@ export function App() {
                   onOpenPip={() => pipTriggerRef.current?.()}
                 />
 
+                <TaskListView tasks={activeListTasks} nowMs={nowMs} />
+
                 <QuickAddTask inputRef={quickAddInputRef} />
 
-                <TaskListView tasks={activeListTasks} nowMs={nowMs} />
+                <InlineFocusCompleted />
               </>
             )}
 
@@ -686,9 +689,11 @@ export function App() {
                     onOpenPip={() => pipTriggerRef.current?.()}
                   />
 
+                  <TaskListView tasks={activeListTasks} nowMs={nowMs} />
+
                   <QuickAddTask inputRef={quickAddInputRef} />
 
-                  <TaskListView tasks={activeListTasks} nowMs={nowMs} />
+                  <InlineFocusCompleted />
                 </div>
 
                 <div className="md:col-span-5 md:sticky md:top-20">

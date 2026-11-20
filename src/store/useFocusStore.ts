@@ -30,6 +30,7 @@ import type {
   EmojiThemePack,
   FocusSettings,
   FocusUser,
+  Project,
   SharedListPayload,
   SoundscapeId,
   SubTask,
@@ -205,6 +206,7 @@ export interface FocusState {
   // Persisted core domain data
   lists: TaskList[];
   tasks: Task[];
+  projects: Project[];
   activeListId: string | null;
   dailyFocusSeconds: DailyFocusMap;
   dailyCategoryFocus: DailyCategoryFocusMap;
@@ -264,21 +266,42 @@ export interface FocusState {
   applyPresetToActiveList: (presetId: string) => number;
   saveActiveListAsPreset: (presetName?: string) => string | null;
 
+  // Project Actions
+  createProject: (name: string, emoji?: string, color?: string) => string;
+  updateProject: (
+    projectId: string,
+    patch: { name?: string; emoji?: string; color?: string },
+  ) => void;
+  deleteProject: (projectId: string) => void;
+
   // Task Actions
   addTask: (input: {
     title: string;
     durationSeconds: number;
     emoji?: string;
     color?: TaskColor;
+    project_id?: string | null;
     status?: 'todo' | 'not_now';
     listId?: string | null;
   }) => string;
+  addTasksBulk: (
+    items: Array<{
+      title: string;
+      durationSeconds: number;
+      emoji?: string;
+      color?: TaskColor;
+      project_id?: string | null;
+      status?: 'todo' | 'not_now';
+      listId?: string | null;
+    }>,
+  ) => string[];
   updateTask: (
     taskId: string,
     patch: {
       title?: string;
       emoji?: string;
       color?: TaskColor;
+      project_id?: string | null;
       duration_seconds?: number;
       remaining_seconds?: number;
     },
@@ -420,6 +443,7 @@ export const useFocusStore = create<FocusState>()(
     (set, get) => ({
       lists: INITIAL_SEED.lists,
       tasks: INITIAL_SEED.tasks,
+      projects: [],
       activeListId: INITIAL_SEED.activeListId,
       dailyFocusSeconds: {},
       dailyCategoryFocus: {},
@@ -521,6 +545,7 @@ export const useFocusStore = create<FocusState>()(
             showFunToolbar: DEFAULT_SETTINGS.showFunToolbar,
             showSummaryInHeader: DEFAULT_SETTINGS.showSummaryInHeader,
             showQuickMinuteChips: DEFAULT_SETTINGS.showQuickMinuteChips,
+            showCompletedInFocus: DEFAULT_SETTINGS.showCompletedInFocus,
           },
         }));
       },
@@ -828,6 +853,7 @@ export const useFocusStore = create<FocusState>()(
           id: createUuid(),
           user_id: state.user?.id,
           list_id: targetListId,
+          project_id: pt.project_id ?? null,
           title: pt.title,
           emoji: pt.emoji,
           color: pt.color,
@@ -894,6 +920,7 @@ export const useFocusStore = create<FocusState>()(
           id: createUuid(),
           user_id: state.user?.id,
           list_id: presetId,
+          project_id: t.project_id ?? null,
           title: t.title,
           emoji: t.emoji,
           color: t.color,
@@ -921,69 +948,162 @@ export const useFocusStore = create<FocusState>()(
         return presetId;
       },
 
-      addTask: ({
-        title,
-        durationSeconds,
-        emoji = '⚡',
-        color = 'none',
-        status = 'todo',
-        listId,
-      }) => {
+      createProject: (name, emoji = '📁', color) => {
+        const cleanName = name.trim();
+        const activeCount = get().projects.filter((p) => !p.deleted_at).length;
+        const resolvedColor =
+          color && color !== 'none'
+            ? color
+            : ACCENT_SWATCHES[activeCount % ACCENT_SWATCHES.length];
+        const now = new Date().toISOString();
+        const id = createUuid();
+        const newProject: Project = {
+          id,
+          name: cleanName || (get().settings.language === 'tr' ? 'Yeni Proje' : 'New Project'),
+          emoji: emoji || '📁',
+          color: resolvedColor,
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+        };
+        get().playButtonClick();
+        set((s) => ({
+          projects: [...s.projects, newProject],
+        }));
+        return id;
+      },
+
+      updateProject: (projectId, patch) => {
+        const now = new Date().toISOString();
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  ...(patch.name !== undefined ? { name: patch.name.trim() || p.name } : {}),
+                  ...(patch.emoji !== undefined ? { emoji: patch.emoji } : {}),
+                  ...(patch.color !== undefined ? { color: patch.color } : {}),
+                  updated_at: now,
+                }
+              : p,
+          ),
+        }));
+      },
+
+      deleteProject: (projectId) => {
+        const now = new Date().toISOString();
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId ? { ...p, deleted_at: now, updated_at: now } : p,
+          ),
+          tasks: s.tasks.map((t) =>
+            t.project_id === projectId
+              ? { ...t, project_id: null, updated_at: now, is_seed: false }
+              : t,
+          ),
+        }));
+        triggerSyncIfLoggedIn(get, set);
+      },
+
+      addTasksBulk: (items) => {
+        if (items.length === 0) return [];
         const state = get();
         const now = new Date().toISOString();
-        let resolvedListId: string | null = listId !== undefined ? listId : state.activeListId;
+        const defaultActiveId = state.activeListId;
 
-        if (status === 'todo' && !resolvedListId) {
+        const firstStatus = items[0]?.status ?? 'todo';
+        const firstListArg = items[0]?.listId;
+        let fallbackTodoListId: string | null =
+          firstListArg !== undefined ? firstListArg : defaultActiveId;
+
+        if (
+          items.some((i) => (i.status ?? 'todo') === 'todo' && i.listId === undefined) &&
+          !fallbackTodoListId
+        ) {
           const firstRegular = state.lists.find((l) => !l.deleted_at && !l.is_preset);
-          resolvedListId =
+          fallbackTodoListId =
             firstRegular?.id ??
             state.createList(state.settings.language === 'tr' ? 'Odak' : 'Focus', '🎯', false);
         }
 
-        const relevantTasks = get().tasks.filter(
-          (t) =>
-            !t.deleted_at &&
-            t.status === status &&
-            (status === 'not_now' ? true : t.list_id === resolvedListId),
-        );
-        const maxOrder = relevantTasks.reduce((m, t) => Math.max(m, t.sort_order), -1);
+        const bucketNextOrder = new Map<string, number>();
+        const existingTasks = get().tasks;
+        const affectedListIds = new Set<string>();
+        const newTasks: Task[] = [];
+        const createdIds: string[] = [];
 
-        const safeDuration = Math.max(60, Math.round(durationSeconds));
-        const id = createUuid();
-        const newTask: Task = {
-          id,
-          user_id: get().user?.id,
-          list_id: status === 'not_now' ? null : resolvedListId,
-          title: title.trim() || 'Untitled Task',
-          emoji: emoji || '⚡',
-          color,
-          duration_seconds: safeDuration,
-          remaining_seconds: safeDuration,
-          actual_focused_seconds: 0,
-          overtime_added_seconds: 0,
-          status,
-          sort_order: maxOrder + 1,
-          completed_at: null,
-          created_at: now,
-          updated_at: now,
-          deleted_at: null,
-          is_seed: false,
-        };
+        for (const item of items) {
+          const itemStatus = item.status ?? firstStatus;
+          let resolvedListId: string | null =
+            itemStatus === 'not_now'
+              ? null
+              : item.listId !== undefined
+                ? item.listId
+                : fallbackTodoListId;
+
+          if (itemStatus === 'todo' && !resolvedListId) {
+            resolvedListId = fallbackTodoListId;
+          }
+          if (resolvedListId) affectedListIds.add(resolvedListId);
+
+          const bucketKey = `${itemStatus}:${resolvedListId ?? '__null__'}`;
+          let nextOrder = bucketNextOrder.get(bucketKey);
+          if (nextOrder === undefined) {
+            const matching = existingTasks.filter(
+              (t) =>
+                !t.deleted_at &&
+                t.status === itemStatus &&
+                (itemStatus === 'not_now' ? true : t.list_id === resolvedListId),
+            );
+            nextOrder = matching.reduce((m, t) => Math.max(m, t.sort_order), -1) + 1;
+          }
+          bucketNextOrder.set(bucketKey, nextOrder + 1);
+
+          const safeDuration = Math.max(60, Math.round(item.durationSeconds));
+          const id = createUuid();
+          createdIds.push(id);
+
+          newTasks.push({
+            id,
+            user_id: get().user?.id,
+            list_id: resolvedListId,
+            project_id: item.project_id ?? null,
+            title: item.title.trim() || 'Untitled Task',
+            emoji: item.emoji || '⚡',
+            color: item.color ?? 'none',
+            duration_seconds: safeDuration,
+            remaining_seconds: safeDuration,
+            actual_focused_seconds: 0,
+            overtime_added_seconds: 0,
+            status: itemStatus,
+            sort_order: nextOrder,
+            completed_at: null,
+            created_at: now,
+            updated_at: now,
+            deleted_at: null,
+            is_seed: false,
+          });
+        }
 
         get().playButtonClick();
 
         set((s) => ({
-          ...(status === 'todo' && !s.activeListId && resolvedListId
-            ? { activeListId: resolvedListId }
+          ...(firstStatus === 'todo' && !s.activeListId && fallbackTodoListId
+            ? { activeListId: fallbackTodoListId }
             : {}),
           lists: s.lists.map((l) =>
-            l.id === resolvedListId ? { ...l, is_seed: false, updated_at: now } : l,
+            affectedListIds.has(l.id) ? { ...l, is_seed: false, updated_at: now } : l,
           ),
-          tasks: [...s.tasks, newTask],
+          tasks: [...s.tasks, ...newTasks],
         }));
 
         triggerSyncIfLoggedIn(get, set);
-        return id;
+        return createdIds;
+      },
+
+      addTask: (input) => {
+        const ids = get().addTasksBulk([input]);
+        return ids[0] ?? '';
       },
 
       updateTask: (taskId, patch) => {
@@ -1011,6 +1131,7 @@ export const useFocusStore = create<FocusState>()(
               ...(patch.title !== undefined ? { title: patch.title.trim() || t.title } : {}),
               ...(patch.emoji !== undefined ? { emoji: patch.emoji } : {}),
               ...(patch.color !== undefined ? { color: patch.color } : {}),
+              ...(patch.project_id !== undefined ? { project_id: patch.project_id } : {}),
               duration_seconds: nextDuration,
               remaining_seconds: nextRemaining,
               updated_at: now,
@@ -1365,6 +1486,7 @@ export const useFocusStore = create<FocusState>()(
           id: createUuid(),
           user_id: state.user?.id,
           list_id: target.list_id,
+          project_id: target.project_id ?? null,
           title: p.title,
           emoji: p.emoji,
           color: target.color,
@@ -1810,9 +1932,9 @@ export const useFocusStore = create<FocusState>()(
           sendTimerFinishedNotification(topTask.title, topTask.emoji, settings.language);
           if (settings.audioAlarm) {
             if (settings.audioAlarmContinuous) {
-              audioEngine.startContinuousAlarm();
+              audioEngine.startContinuousAlarm(settings.alarmSound);
             } else {
-              audioEngine.playTimerDoneChime();
+              audioEngine.playTimerDoneChime(settings.alarmSound);
             }
           }
         }
@@ -1830,7 +1952,7 @@ export const useFocusStore = create<FocusState>()(
         ) {
           const overtimeMin = Math.floor(Math.abs(nextRemaining) / 60);
           if (overtimeMin > 0 && overtimeMin > state.lastNagMinuteNotified) {
-            audioEngine.playTimerDoneChime();
+            audioEngine.playTimerDoneChime(settings.alarmSound);
             nextNagMinute = overtimeMin;
           }
         }
@@ -1862,9 +1984,14 @@ export const useFocusStore = create<FocusState>()(
         }
 
         set((s) => {
-          const prevBucket = s.dailyCategoryFocus[todayKey] ?? { byList: {}, byColor: {} };
+          const prevBucket = s.dailyCategoryFocus[todayKey] ?? {
+            byList: {},
+            byColor: {},
+            byProject: {},
+          };
           const listKey = topTask.list_id ?? '__none__';
           const colorKey = normalizeHex(topTask.color) ?? '__none__';
+          const projectKey = topTask.project_id ?? '__none__';
 
           return {
             tasks: s.tasks.map((t) =>
@@ -1894,6 +2021,11 @@ export const useFocusStore = create<FocusState>()(
                       byColor: {
                         ...prevBucket.byColor,
                         [colorKey]: (prevBucket.byColor[colorKey] ?? 0) + effectiveFocusedDelta,
+                      },
+                      byProject: {
+                        ...(prevBucket.byProject ?? {}),
+                        [projectKey]:
+                          ((prevBucket.byProject ?? {})[projectKey] ?? 0) + effectiveFocusedDelta,
                       },
                     },
                   }
@@ -2020,6 +2152,7 @@ export const useFocusStore = create<FocusState>()(
           set({
             lists: freshSeed.lists,
             tasks: freshSeed.tasks,
+            projects: [],
             activeListId: freshSeed.activeListId,
             dailyFocusSeconds: {},
             dailyCategoryFocus: {},
@@ -2131,10 +2264,11 @@ export const useFocusStore = create<FocusState>()(
       exportBackupJson: () => {
         const state = get();
         return {
-          version: 3,
+          version: 4,
           exportedAt: new Date().toISOString(),
           lists: state.lists.filter((l) => !l.deleted_at),
           tasks: state.tasks.filter((t) => !t.deleted_at),
+          projects: state.projects.filter((p) => !p.deleted_at),
           dailyFocusSeconds: state.dailyFocusSeconds,
           dailyCategoryFocus: state.dailyCategoryFocus,
           activeListId: state.activeListId,
@@ -2150,6 +2284,23 @@ export const useFocusStore = create<FocusState>()(
 
         const now = new Date().toISOString();
         const userId = get().user?.id;
+
+        const cleanProjects: Project[] = Array.isArray(data.projects)
+          ? data.projects.map((p, idx) => ({
+              id: p.id || createUuid(),
+              name: String(p.name || 'Project').trim() || 'Project',
+              emoji: p.emoji || '📁',
+              color: p.color || ACCENT_SWATCHES[idx % ACCENT_SWATCHES.length],
+              created_at: p.created_at || now,
+              updated_at: now,
+              deleted_at: null,
+            }))
+          : [];
+
+        const validProjectIds = new Set([
+          ...cleanProjects.map((p) => p.id),
+          ...(mode === 'merge' ? get().projects.filter((p) => !p.deleted_at).map((p) => p.id) : []),
+        ]);
 
         const cleanLists: TaskList[] = data.lists.map((l, idx) => ({
           id: l.id || createUuid(),
@@ -2169,6 +2320,7 @@ export const useFocusStore = create<FocusState>()(
           id: t.id || createUuid(),
           user_id: userId,
           list_id: t.list_id && validListIds.has(t.list_id) ? t.list_id : null,
+          project_id: t.project_id && validProjectIds.has(t.project_id) ? t.project_id : null,
           title: String(t.title || 'Task').trim() || 'Task',
           emoji: t.emoji || '⚡',
           color: t.color || 'none',
@@ -2180,6 +2332,8 @@ export const useFocusStore = create<FocusState>()(
           overtime_added_seconds: Math.max(0, Number(t.overtime_added_seconds) || 0),
           status: t.status === 'not_now' || t.status === 'completed' ? t.status : 'todo',
           sort_order: Number.isFinite(t.sort_order) ? t.sort_order : idx,
+          subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
+          scheduled_start: t.scheduled_start ?? null,
           completed_at: t.completed_at ?? null,
           created_at: t.created_at || now,
           updated_at: now,
@@ -2197,6 +2351,7 @@ export const useFocusStore = create<FocusState>()(
           set((s) => ({
             lists: cleanLists,
             tasks: cleanTasks,
+            projects: cleanProjects,
             dailyFocusSeconds: data.dailyFocusSeconds ?? {},
             dailyCategoryFocus: data.dailyCategoryFocus ?? {},
             activeListId: nextActive,
@@ -2210,6 +2365,9 @@ export const useFocusStore = create<FocusState>()(
           }));
         } else {
           const state = get();
+          const projectMap = new Map(state.projects.map((p) => [p.id, p]));
+          for (const p of cleanProjects) projectMap.set(p.id, p);
+
           const listMap = new Map(state.lists.map((l) => [l.id, l]));
           for (const l of cleanLists) listMap.set(l.id, l);
 
@@ -2223,21 +2381,26 @@ export const useFocusStore = create<FocusState>()(
 
           const mergedCategory: DailyCategoryFocusMap = { ...state.dailyCategoryFocus };
           for (const [dateKey, bucket] of Object.entries(data.dailyCategoryFocus ?? {})) {
-            const cur = mergedCategory[dateKey] ?? { byList: {}, byColor: {} };
+            const cur = mergedCategory[dateKey] ?? { byList: {}, byColor: {}, byProject: {} };
             const byList = { ...cur.byList };
             const byColor = { ...cur.byColor };
+            const byProject = { ...(cur.byProject ?? {}) };
             for (const [lk, lv] of Object.entries(bucket.byList ?? {})) {
               byList[lk] = Math.max(byList[lk] ?? 0, Number(lv) || 0);
             }
             for (const [ck, cv] of Object.entries(bucket.byColor ?? {})) {
               byColor[ck] = Math.max(byColor[ck] ?? 0, Number(cv) || 0);
             }
-            mergedCategory[dateKey] = { byList, byColor };
+            for (const [pk, pv] of Object.entries(bucket.byProject ?? {})) {
+              byProject[pk] = Math.max(byProject[pk] ?? 0, Number(pv) || 0);
+            }
+            mergedCategory[dateKey] = { byList, byColor, byProject };
           }
 
           set({
             lists: Array.from(listMap.values()),
             tasks: Array.from(taskMap.values()),
+            projects: Array.from(projectMap.values()),
             dailyFocusSeconds: mergedDaily,
             dailyCategoryFocus: mergedCategory,
           });
@@ -2341,6 +2504,9 @@ export const useFocusStore = create<FocusState>()(
             ? pruneExpiredTombstones(persisted.lists)
             : currentState.lists,
           tasks: migratedTasks,
+          projects: Array.isArray(persisted.projects)
+            ? pruneExpiredTombstones(persisted.projects)
+            : currentState.projects,
           dailyCategoryFocus:
             persisted.dailyCategoryFocus && typeof persisted.dailyCategoryFocus === 'object'
               ? persisted.dailyCategoryFocus
@@ -2354,6 +2520,7 @@ export const useFocusStore = create<FocusState>()(
       partialize: (state) => ({
         lists: state.lists,
         tasks: state.tasks,
+        projects: state.projects,
         activeListId: state.activeListId,
         dailyFocusSeconds: state.dailyFocusSeconds,
         dailyCategoryFocus: state.dailyCategoryFocus,

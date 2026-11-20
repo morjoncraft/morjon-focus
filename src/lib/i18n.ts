@@ -36,13 +36,16 @@ export const DEFAULT_SETTINGS: FocusSettings = {
   chimeVolume: 4,
   buttonClicks: true,
 
+  // Stats & Streak Goal
+  dailyGoalMinutes: 120,
+
   // Navbar, Sidebar & UI Appearance
   navbarPosition: 'top',
   navbarStyle: 'icons_text',
   sidebarPosition: 'left',
   sidebarCollapsed: false,
   surfaceTheme: 'llama-slate',
-  ambientGlow: true,
+  ambientGlow: false,
   cardVariant: 'tinted',
   cardDensity: 'comfortable',
   cornerStyle: 'rounded',
@@ -112,10 +115,10 @@ const DICT = {
     customPacks: 'Your Custom Packs',
 
     // Quick Add
-    quickAddPlaceholder: 'Add a task... e.g. Study JUnit lesson 14 45m',
+    quickAddPlaceholder: 'Add a task... e.g. Read 20 pages 30m',
     add: 'Add',
     defaultTimeShort: 'Default:',
-    quickAddTip: 'Tip: end with 45m, 1h 20m, or 25',
+    quickAddTip: 'Tip: end with 30m, 1h 15m, or 25',
 
     // Task Queue
     upNext: 'Up Next',
@@ -144,7 +147,7 @@ const DICT = {
     notNowTitle: 'Not-Now (Holding Pool)',
     notNowDesc:
       'Park tasks you are not doing today without deleting them. Recall any task with one click.',
-    notNowInputPlaceholder: 'Park a task for later... e.g. Book summary 30m',
+    notNowInputPlaceholder: 'Park a task for later... e.g. Organize desk 20m',
     sendToPool: 'Park Task',
     notNowEmpty: 'Your Not-Now pool is empty.',
     recallTop: 'Recall Top',
@@ -222,7 +225,7 @@ const DICT = {
     lightOption: 'Light',
     smartTimeTitle: 'Smart Time Detection',
     smartTimeDesc:
-      'Type a duration or number after a task title to set its timer automatically, e.g. "My task 10" or "Lecture 45m".',
+      'Type a duration or number after a task title to set its timer automatically, e.g. "Read book 30m" or "Organize desk 15".',
     defaultTimeTitle: 'Default Time',
     defaultTimeDesc: 'Set the default time used when creating new tasks.',
     defaultTimeInline: 'Default time is',
@@ -326,6 +329,28 @@ const DICT = {
     sidebarCollapsedLabel: 'Collapse Sidebar',
     cmdPalettePlaceholder: 'Type a command, list, preset, or soundscape...',
     cmdNoResults: 'No matching commands found.',
+
+    // Streak, Heatmap, Distribution & Delta Sync
+    dailyGoalLabel: 'Daily Goal',
+    goalMetBadge: 'Goal met',
+    currentStreakLabel: 'Focus Streak',
+    longestStreakLabel: 'Best Streak',
+    daysUnit: 'days',
+    activeDaysYearLabel: 'Active Days (1Y)',
+    yearlyHeatmapTitle: 'Yearly Focus Heatmap',
+    heatmapLess: 'Less',
+    heatmapMore: 'More',
+    heatmapSelectHint: 'Hover or click a square to inspect day details',
+    distributionTitle: 'Focus Distribution',
+    distByLists: 'By Lists',
+    distByColors: 'By Colors',
+    distRangeWeek: 'Last 7 Days',
+    distRangeAll: 'All Recorded',
+    distEmpty: 'Start focusing on tasks to see your breakdown by list or color tag.',
+    deltaSyncBadge: 'Delta Sync Active',
+    copySqlBtn: 'Copy Supabase Setup SQL',
+    copiedSqlToast: 'SQL copied! Paste into Supabase Dashboard → SQL Editor and run.',
+    syncErrorTitle: 'Cloud Sync Error',
   },
   tr: {
     appTitle: 'Morjon Focus',
@@ -386,10 +411,10 @@ const DICT = {
     customPacks: 'Özel Paketlerin',
 
     // Quick Add
-    quickAddPlaceholder: 'Görev ekle... ör: JUnit ders 14 izle 45m',
+    quickAddPlaceholder: 'Görev ekle... ör: Kitap oku 30m',
     add: 'Ekle',
     defaultTimeShort: 'Varsayılan:',
-    quickAddTip: 'İpucu: Sonuna 45m, 1h 20m veya 25 yaz',
+    quickAddTip: 'İpucu: Sonuna 30m, 1h 15m veya 25 yaz',
 
     // Task Queue
     upNext: 'Sıradaki Görevler',
@@ -418,7 +443,7 @@ const DICT = {
     notNowTitle: 'Not-Now (Bekleme Havuzu)',
     notNowDesc:
       'Bugün yapmayacağın görevleri silmeden burada beklet. İstediğinde tek tıkla aktif listene geri çağır.',
-    notNowInputPlaceholder: 'Havuzda bekletilecek görev... ör: Kitap özeti 30m',
+    notNowInputPlaceholder: 'Havuzda bekletilecek görev... ör: Masayı düzenle 20m',
     sendToPool: 'Havuza At',
     notNowEmpty: 'Bekleme havuzun şu an boş.',
     recallTop: 'En Üste Çağır',
@@ -496,7 +521,7 @@ const DICT = {
     lightOption: 'Açık',
     smartTimeTitle: 'Akıllı Süre Algılama',
     smartTimeDesc:
-      'Görev adının sonuna süre veya sayı yazdığında sayacı otomatik ayarlar; ör. "Görevim 10" veya "Ders 45m".',
+      'Görev adının sonuna süre veya sayı yazdığında sayacı otomatik ayarlar; ör. "Kitap oku 30m" veya "Rapor hazırla 15".',
     defaultTimeTitle: 'Varsayılan Süre',
     defaultTimeDesc: 'Yeni görev oluştururken atanacak varsayılan süreyi belirle.',
     defaultTimeInline: 'Varsayılan süre:',
@@ -600,6 +625,28 @@ const DICT = {
     sidebarCollapsedLabel: 'Kenar Çubuğunu Daralt',
     cmdPalettePlaceholder: 'Komut, liste, şablon veya ortam sesi ara...',
     cmdNoResults: 'Eşleşen komut bulunamadı.',
+
+    // Streak, Heatmap, Distribution & Delta Sync
+    dailyGoalLabel: 'Günlük Hedef',
+    goalMetBadge: 'Hedef tamam',
+    currentStreakLabel: 'Odak Serisi',
+    longestStreakLabel: 'En Uzun Seri',
+    daysUnit: 'gün',
+    activeDaysYearLabel: 'Aktif Gün (1 Yıl)',
+    yearlyHeatmapTitle: 'Yıllık Odak Isı Haritası',
+    heatmapLess: 'Az',
+    heatmapMore: 'Çok',
+    heatmapSelectHint: 'Detay için bir kutunun üzerine gel veya tıkla',
+    distributionTitle: 'Odak Dağılımı',
+    distByLists: 'Listelere Göre',
+    distByColors: 'Renklere Göre',
+    distRangeWeek: 'Son 7 Gün',
+    distRangeAll: 'Tüm Kayıtlar',
+    distEmpty: 'Liste veya renk dağılımını görmek için bir görevde odaklanmaya başla.',
+    deltaSyncBadge: 'Artımlı (Delta) Senkronizasyon',
+    copySqlBtn: 'Supabase Kurulum SQL Kopyala',
+    copiedSqlToast: 'SQL kopyalandı! Supabase Dashboard → SQL Editor içine yapıştırıp Run butonuna bas.',
+    syncErrorTitle: 'Bulut Senkronizasyon Hatası',
   },
 } as const;
 

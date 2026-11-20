@@ -275,68 +275,136 @@ export const SURFACE_THEMES: Record<SurfaceTheme, SurfaceThemeConfig> = {
     id: 'llama-slate',
     name: 'Llama Slate',
     nameTr: 'Llama Slate (Klasik)',
-    previewGradient: 'linear-gradient(135deg, #272b36 0%, #9364b8 100%)',
+    previewGradient: 'linear-gradient(135deg, #272b36 0%, #3b4052 100%)',
     darkBg: '#1e212a',
     lightBg: '#f4f6fb',
-    darkPanel: 'rgba(38, 42, 53, 0.85)',
-    lightPanel: 'rgba(255, 255, 255, 0.9)',
+    darkPanel: 'rgba(38, 42, 53, 0.88)',
+    lightPanel: 'rgba(255, 255, 255, 0.92)',
     glowColors: ['#9364b8', '#3aa0b5'],
   },
   'aurora-night': {
     id: 'aurora-night',
-    name: 'Aurora Glow',
-    nameTr: 'Aurora Işıltısı',
-    previewGradient: 'linear-gradient(135deg, #1b1834 0%, #0fa988 55%, #d56aa6 100%)',
-    darkBg: '#151424',
-    lightBg: '#f4f3ff',
-    darkPanel: 'rgba(30, 28, 52, 0.82)',
-    lightPanel: 'rgba(255, 255, 255, 0.88)',
+    name: 'Soft Lavender',
+    nameTr: 'Yumuşak Lavanta',
+    previewGradient: 'linear-gradient(135deg, #1b1a2a 0%, #2a2742 100%)',
+    darkBg: '#191826',
+    lightBg: '#f5f4fb',
+    darkPanel: 'rgba(32, 30, 50, 0.88)',
+    lightPanel: 'rgba(255, 255, 255, 0.92)',
     glowColors: ['#0fa988', '#d56aa6'],
   },
   'midnight-ocean': {
     id: 'midnight-ocean',
     name: 'Midnight Ocean',
     nameTr: 'Gece Okyanusu',
-    previewGradient: 'linear-gradient(135deg, #0f172a 0%, #0284c7 60%, #2dd4bf 100%)',
-    darkBg: '#0f1726',
-    lightBg: '#eff8ff',
-    darkPanel: 'rgba(22, 33, 54, 0.84)',
-    lightPanel: 'rgba(255, 255, 255, 0.9)',
+    previewGradient: 'linear-gradient(135deg, #131c28 0%, #1d2d40 100%)',
+    darkBg: '#131c28',
+    lightBg: '#f1f7fc',
+    darkPanel: 'rgba(24, 35, 52, 0.88)',
+    lightPanel: 'rgba(255, 255, 255, 0.92)',
     glowColors: ['#1388ba', '#0fa988'],
   },
   'sunset-glow': {
     id: 'sunset-glow',
-    name: 'Sunset Ember',
-    nameTr: 'Gün Batımı',
-    previewGradient: 'linear-gradient(135deg, #271722 0%, #e05a5a 55%, #d89b48 100%)',
-    darkBg: '#1f1620',
-    lightBg: '#fff7f3',
-    darkPanel: 'rgba(43, 28, 42, 0.84)',
-    lightPanel: 'rgba(255, 255, 255, 0.9)',
+    name: 'Warm Plum',
+    nameTr: 'Sıcak Erik',
+    previewGradient: 'linear-gradient(135deg, #21191e 0%, #33242b 100%)',
+    darkBg: '#21191e',
+    lightBg: '#fcf6f4',
+    darkPanel: 'rgba(43, 30, 38, 0.88)',
+    lightPanel: 'rgba(255, 255, 255, 0.92)',
     glowColors: ['#e05a5a', '#d89b48'],
   },
   'forest-mist': {
     id: 'forest-mist',
     name: 'Forest Mist',
     nameTr: 'Orman Sisi',
-    previewGradient: 'linear-gradient(135deg, #12211c 0%, #4caf6a 60%, #3aa0b5 100%)',
-    darkBg: '#131d19',
-    lightBg: '#f1faf5',
-    darkPanel: 'rgba(25, 39, 33, 0.84)',
-    lightPanel: 'rgba(255, 255, 255, 0.9)',
+    previewGradient: 'linear-gradient(135deg, #151f1b 0%, #20312b 100%)',
+    darkBg: '#151f1b',
+    lightBg: '#f2f9f5',
+    darkPanel: 'rgba(26, 39, 34, 0.88)',
+    lightPanel: 'rgba(255, 255, 255, 0.92)',
     glowColors: ['#4caf6a', '#3aa0b5'],
   },
   'pure-minimal': {
     id: 'pure-minimal',
     name: 'Pure Minimal',
     nameTr: 'Saf Minimal',
-    previewGradient: 'linear-gradient(135deg, #18181b 0%, #52525b 100%)',
+    previewGradient: 'linear-gradient(135deg, #18181b 0%, #27272a 100%)',
     darkBg: '#18181b',
     lightBg: '#f4f4f5',
-    darkPanel: 'rgba(39, 39, 42, 0.88)',
+    darkPanel: 'rgba(39, 39, 42, 0.9)',
     lightPanel: 'rgba(255, 255, 255, 0.94)',
     glowColors: ['#71717a', '#a1a1aa'],
   },
 };
 
 export const SURFACE_THEME_LIST: SurfaceThemeConfig[] = Object.values(SURFACE_THEMES);
+
+export function getFriendlyColorLabel(
+  color: TaskColor,
+  lang: 'en' | 'tr' = 'en',
+): { key: string; label: string; hex: string } {
+  const hex = normalizeHex(color);
+  if (!hex) {
+    return {
+      key: '__none__',
+      label: lang === 'tr' ? 'Renksiz / Nötr' : 'Neutral / Unlabeled',
+      hex: '#71717a',
+    };
+  }
+
+  const [r, g, b] = hexToRgb(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+
+  if (delta < 24) {
+    return {
+      key: hex,
+      label: lang === 'tr' ? `Taş / Gri (${hex})` : `Stone (${hex})`,
+      hex,
+    };
+  }
+
+  let hue = 0;
+  if (max === r) hue = ((g - b) / delta) % 6;
+  else if (max === g) hue = (b - r) / delta + 2;
+  else hue = (r - g) / delta + 4;
+  hue = Math.round(hue * 60);
+  if (hue < 0) hue += 360;
+
+  let enName = 'Color';
+  let trName = 'Renk';
+  if (hue < 16 || hue >= 342) {
+    enName = 'Crimson & Rose';
+    trName = 'Mercan & Gül';
+  } else if (hue < 38) {
+    enName = 'Warm Amber';
+    trName = 'Sıcak Turuncu';
+  } else if (hue < 68) {
+    enName = 'Golden Sun';
+    trName = 'Altın Sarı';
+  } else if (hue < 152) {
+    enName = 'Forest & Emerald';
+    trName = 'Zümrüt Yeşil';
+  } else if (hue < 192) {
+    enName = 'Ocean Teal';
+    trName = 'Okyanus Turkuaz';
+  } else if (hue < 248) {
+    enName = 'Sky & Cobalt';
+    trName = 'Gökyüzü Mavi';
+  } else if (hue < 292) {
+    enName = 'Violet & Plum';
+    trName = 'Mor & Lavanta';
+  } else {
+    enName = 'Pink & Magenta';
+    trName = 'Pembe & Fuşya';
+  }
+
+  return {
+    key: hex,
+    label: lang === 'tr' ? trName : enName,
+    hex,
+  };
+}

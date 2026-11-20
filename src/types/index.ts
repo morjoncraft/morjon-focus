@@ -102,6 +102,9 @@ export interface FocusSettings {
   chimeVolume: number;
   buttonClicks: boolean;
 
+  // Stats & Streak Goal
+  dailyGoalMinutes: number;
+
   // Navbar, Sidebar & UI Appearance
   navbarPosition: NavbarPosition;
   navbarStyle: NavbarStyle;
@@ -130,6 +133,8 @@ export interface TaskList {
   deleted_at: string | null;
   /** Local-only flag indicating untouched initial sample data for smart login merge */
   is_seed?: boolean;
+  /** Local-only delta sync watermark matching updated_at at last successful cloud push/pull */
+  synced_updated_at?: string;
 }
 
 export interface Task {
@@ -154,9 +159,18 @@ export interface Task {
   deleted_at: string | null;
   /** Local-only flag indicating untouched initial sample data for smart login merge */
   is_seed?: boolean;
+  /** Local-only delta sync watermark matching updated_at at last successful cloud push/pull */
+  synced_updated_at?: string;
 }
 
 export type DailyFocusMap = Record<string, number>;
+
+export interface DailyCategoryBucket {
+  byList: Record<string, number>;
+  byColor: Record<string, number>;
+}
+
+export type DailyCategoryFocusMap = Record<string, DailyCategoryBucket>;
 
 export interface FocusUser {
   id: string;
@@ -169,6 +183,7 @@ export interface BackupData {
   lists: TaskList[];
   tasks: Task[];
   dailyFocusSeconds: DailyFocusMap;
+  dailyCategoryFocus?: DailyCategoryFocusMap;
   activeListId: string | null;
   settings?: Partial<FocusSettings>;
   customEmojiThemes?: EmojiThemePack[];

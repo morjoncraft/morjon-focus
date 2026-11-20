@@ -155,11 +155,16 @@ export const Navbar: React.FC<NavbarProps> = ({
       return (
         <button
           type="button"
-          onClick={() => void triggerManualSync()}
-          title={syncError ?? 'Sync error'}
-          className={`inline-flex items-center gap-1 ${btnShape} bg-rose-500/15 px-2 py-1 text-[11px] font-medium text-rose-600 dark:text-rose-300`}
+          onClick={onOpenAuth}
+          title={syncError ?? t(lang, 'syncErrorTitle')}
+          className={`inline-flex items-center gap-1 ${btnShape} bg-rose-500/15 px-2 py-1 text-[11px] font-medium text-rose-600 dark:text-rose-300 hover:bg-rose-500/25 transition`}
         >
           <AlertCircle className="h-3.5 w-3.5" />
+          {!isIconsOnly && !isSideRail && (
+            <span className="hidden sm:inline">
+              {lang === 'tr' ? 'Senk. Hatası' : 'Sync Error'}
+            </span>
+          )}
           <RefreshCw className="h-3 w-3" />
         </button>
       );
@@ -324,13 +329,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={onOpenAuth}
-            className={`${btnBase} h-9 w-9 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900`}
-            title={t(lang, 'cloudSignIn')}
+            className={`relative ${btnBase} h-9 w-9 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900`}
+            title={syncStatus === 'error' ? syncError ?? t(lang, 'syncErrorTitle') : t(lang, 'cloudSignIn')}
           >
             {user ? (
-              <UserCheck className="h-4 w-4 text-emerald-500" />
+              <UserCheck
+                className={`h-4 w-4 ${syncStatus === 'error' ? 'text-rose-500' : 'text-emerald-500'}`}
+              />
             ) : (
               <Cloud className="h-4 w-4 text-violet-500" />
+            )}
+            {syncStatus === 'error' && (
+              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-zinc-900" />
             )}
           </button>
 

@@ -66,12 +66,6 @@ export const PipMiniTimerController: React.FC<PipControllerProps> = ({
     ctx.fillStyle = isDark ? '#1a1d26' : '#f4f6fb';
     ctx.fillRect(0, 0, w, h);
 
-    const accent = (activeTask && normalizeHex(activeTask.color)) || settings.accentColor;
-
-    // Subtle top accent bar
-    ctx.fillStyle = accent;
-    ctx.fillRect(0, 0, w, 6);
-
     if (!activeTask) {
       ctx.fillStyle = isDark ? '#e4e4e7' : '#27272a';
       ctx.font = '600 18px Inter, system-ui, sans-serif';
@@ -81,20 +75,6 @@ export const PipMiniTimerController: React.FC<PipControllerProps> = ({
     }
 
     const isOvertime = activeTask.remaining_seconds < 0;
-    const rem = Math.max(0, activeTask.remaining_seconds);
-    const pct =
-      activeTask.duration_seconds > 0
-        ? Math.max(
-            0,
-            Math.min(
-              1,
-              (activeTask.duration_seconds - rem) / activeTask.duration_seconds,
-            ),
-          )
-        : 1;
-
-    ctx.fillStyle = isOvertime ? '#f43f5e' : accent;
-    ctx.fillRect(0, 0, w * (isOvertime ? 1 : pct), 6);
 
     // Task title
     ctx.fillStyle = isDark ? '#a1a1aa' : '#52525b';
@@ -211,18 +191,6 @@ export const PipMiniTimerController: React.FC<PipControllerProps> = ({
   const taskHex = activeTask ? normalizeHex(activeTask.color) : null;
   const accentHex = taskHex ?? settings.accentColor;
   const isOvertime = activeTask ? activeTask.remaining_seconds < 0 : false;
-  const progressPct =
-    activeTask && activeTask.duration_seconds > 0
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            ((activeTask.duration_seconds - Math.max(0, activeTask.remaining_seconds)) /
-              activeTask.duration_seconds) *
-              100,
-          ),
-        )
-      : 100;
 
   return (
     <>
@@ -237,22 +205,11 @@ export const PipMiniTimerController: React.FC<PipControllerProps> = ({
           <div
             className="flex h-screen w-screen flex-col justify-between p-3.5 select-none"
             style={{
-              backgroundImage: isDark
-                ? `linear-gradient(145deg, ${hexToRgba(accentHex, 0.22)}, #1a1d26 70%)`
-                : `linear-gradient(145deg, ${hexToRgba(accentHex, 0.14)}, #f8fafc 70%)`,
+              backgroundColor: isDark
+                ? hexToRgba(accentHex, 0.12)
+                : hexToRgba(accentHex, 0.08),
             }}
           >
-            {/* Top progress bar */}
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200/70 dark:bg-zinc-800">
-              <div
-                className="h-full transition-all duration-300"
-                style={{
-                  width: `${isOvertime ? 100 : progressPct}%`,
-                  backgroundColor: isOvertime ? '#f43f5e' : settings.accentColor,
-                }}
-              />
-            </div>
-
             {activeTask ? (
               <>
                 <div className="flex items-center justify-between gap-2 pt-1">

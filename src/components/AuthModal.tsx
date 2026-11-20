@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  AlertTriangle,
+  Check,
   Cloud,
+  Copy,
+  Database,
   KeyRound,
   LogOut,
   Mail,
@@ -8,7 +12,10 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
+import { t } from '../lib/i18n';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
+import { SUPABASE_SCHEMA_SQL } from '../lib/supabaseSchemaSql';
+import { computeDeltaBatch, diagnoseSyncError } from '../lib/syncEngine';
 import { useFocusStore } from '../store/useFocusStore';
 
 interface AuthModalProps {
@@ -20,10 +27,13 @@ type AuthMode = 'login' | 'signup' | 'magic';
 
 export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
   const user = useFocusStore((s) => s.user);
+  const lists = useFocusStore((s) => s.lists);
+  const tasks = useFocusStore((s) => s.tasks);
   const lang = useFocusStore((s) => s.settings.language);
   const syncStatus = useFocusStore((s) => s.syncStatus);
   const syncError = useFocusStore((s) => s.syncError);
   const lastSyncedAt = useFocusStore((s) => s.lastSyncedAt);
+  const lastSyncStats = useFocusStore((s) => s.lastSyncStats);
   const triggerManualSync = useFocusStore((s) => s.triggerManualSync);
   const handleAuthUserChange = useFocusStore((s) => s.handleAuthUserChange);
   const signOutUser = useFocusStore((s) => s.signOutUser);
@@ -33,12 +43,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
   const [password, setPassword] = useState('');
   const [clearOnSignOut, setClearOnSignOut] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [sqlCopied, setSqlCopied] = useState(false);
+  const [showSqlSection, setShowSqlSection] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const pendingDeltaCount = useMemo(() => {
+    if (!user) return 0;
+    const batch = computeDeltaBatch(user.id, lists, tasks);
+    return batch.dirtyLists.length + batch.dirtyTasks.length;
+  }, [user, lists, tasks]);
+
+  const diagnostic = useMemo(
+    () => (syncError ? diagnoseSyncError(syncError, lang) : null),
+    [syncError, lang],
+  );
 
   if (!open) return null;
 
   const isTr = lang === 'tr';
   const configured = isSupabaseConfigured();
+
+  const handleCopySql = async () => {
+    try {
+      await navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
+      setSqlCopied(true);
+      window.setTimeout(() => setSqlCopied(false), 3000);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
 
   const statusLabel = (() => {
     switch (syncStatus) {
@@ -121,7 +154,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
             id: data.user.id,
             email: data.user.email,
           });
-          onClose();
+          if (!useFocusStore.getState().syncError) {
+            onClose();
+          }
         }
       }
     } catch (err) {
@@ -147,7 +182,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 sm:p-6 shadow-2xl animate-fade-slide">
+      <div className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 sm:p-6 shadow-2xl animate-fade-slide">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
@@ -158,9 +193,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
                 {isTr ? 'Bulut Yedekleme & Hesap' : 'Cloud Sync & Account'}
               </h2>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                {isTr
-                  ? 'Lokal verilerin girişte otomatik birleştirilir'
-                  : 'Local tasks are automatically merged on sign in'}
+                {t(lang, 'deltaSyncBadge')}
               </p>
             </div>
           </div>
@@ -189,10 +222,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
                 <span className="text-zinc-500 dark:text-zinc-400">
                   {isTr ? 'Durum:' : 'Status:'}
                 </span>
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                <span
+                  className={`font-semibold ${
+                    syncStatus === 'error'
+                      ? 'text-rose-500'
+                      : syncStatus === 'offline'
+                        ? 'text-amber-500'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                  }`}
+                >
                   {statusLabel}
                 </span>
               </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500 dark:text-zinc-400">
+                  {isTr ? 'Bekleyen Değişiklik (Delta):' : 'Pending Delta Rows:'}
+                </span>
+                <span className="font-mono text-zinc-700 dark:text-zinc-300">
+                  {pendingDeltaCount}
+                </span>
+              </div>
+              {lastSyncStats && (
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-500 dark:text-zinc-400">
+                    {isTr ? 'Son Delta Aktarımı:' : 'Last Delta Push:'}
+                  </span>
+                  <span className="font-mono text-[11px] text-zinc-600 dark:text-zinc-300">
+                    {lastSyncStats.upsertedLists} {isTr ? 'liste' : 'lists'},{' '}
+                    {lastSyncStats.upsertedTasks} {isTr ? 'görev' : 'tasks'}
+                  </span>
+                </div>
+              )}
               {lastSyncedAt && (
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500 dark:text-zinc-400">
@@ -203,8 +263,43 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
                   </span>
                 </div>
               )}
-              {syncError && <p className="pt-1 text-rose-500">{syncError}</p>}
             </div>
+
+            {diagnostic && (
+              <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-3.5 text-xs space-y-2">
+                <div className="flex items-start gap-2 text-rose-600 dark:text-rose-300 font-semibold">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{diagnostic.title}</span>
+                </div>
+                <p className="text-[11px] text-rose-700 dark:text-rose-200/90 leading-relaxed">
+                  {diagnostic.detail}
+                </p>
+                {syncError && (
+                  <div className="rounded-lg bg-black/15 dark:bg-black/35 px-2.5 py-1.5 font-mono text-[10px] text-rose-700 dark:text-rose-200 break-all">
+                    {syncError}
+                  </div>
+                )}
+                {diagnostic.needsSchemaSql && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCopySql()}
+                    className="w-full inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white transition"
+                  >
+                    {sqlCopied ? (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        <span>{t(lang, 'copiedSqlToast')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        <span>{t(lang, 'copySqlBtn')}</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
 
             <label className="flex items-start gap-2 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-2.5 text-[11px] text-zinc-600 dark:text-zinc-300 cursor-pointer">
               <input
@@ -237,6 +332,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
                 <LogOut className="h-3.5 w-3.5" />
                 {isTr ? 'Çıkış Yap' : 'Sign Out'}
               </button>
+            </div>
+
+            <div className="border-t border-zinc-200/80 dark:border-zinc-800 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSqlSection((v) => !v)}
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+              >
+                <Database className="h-3 w-3" />
+                <span>
+                  {isTr ? 'Veritabanı SQL Kurulumu (Supabase)' : 'Database SQL Setup (Supabase)'}
+                </span>
+              </button>
+              {showSqlSection && (
+                <div className="mt-2 space-y-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 p-3 text-[11px]">
+                  <p className="text-zinc-500 dark:text-zinc-400">
+                    {isTr
+                      ? 'Supabase Dashboard → SQL Editor içinde bir kez çalıştırarak lists/tasks tablolarını ve RLS politikalarını oluşturabilirsin.'
+                      : 'Run this once in Supabase Dashboard → SQL Editor to create the lists/tasks tables and RLS policies.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopySql()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-[11px] font-semibold text-white dark:text-zinc-900"
+                  >
+                    {sqlCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    <span>{sqlCopied ? t(lang, 'copiedSqlToast') : t(lang, 'copySqlBtn')}</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (

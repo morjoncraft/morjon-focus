@@ -20,6 +20,9 @@
     }
   ],
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/((?!assets/|icons/|manifest\\.json|sw\\.js|workbox-.*\\.js|registerSW\\.js|favicon\\.svg).*)",
+      "destination": "/index.html"
+    }
   ]
 }

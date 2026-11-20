@@ -452,7 +452,6 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ open, onClose })
 
             {(
               [
-                ['ambientGlow', t(lang, 'toggleAmbientGlow')],
                 ['showFunToolbar', t(lang, 'toggleFunToolbar')],
                 ['showSummaryInHeader', t(lang, 'toggleHeaderSummary')],
                 ['showQuickMinuteChips', t(lang, 'toggleQuickChips')],

@@ -5,6 +5,7 @@ import { audioEngine } from '../lib/audioEngine';
 import {
   ACCENT_SWATCHES,
   COLOR_ME_PALETTES,
+  normalizeHex,
   samplePaletteForCount,
 } from '../lib/colors';
 import { BUILTIN_EMOJI_THEMES } from '../lib/emojiLibrary';
@@ -12,11 +13,18 @@ import { getLocalDateKey } from '../lib/formatters';
 import { DEFAULT_SETTINGS } from '../lib/i18n';
 import { sendTimerFinishedNotification } from '../lib/notifications';
 import { suggestEmojiForTitle } from '../lib/parseTaskInput';
-import { mergeAndSyncWithCloud, pruneExpiredTombstones, syncScheduler } from '../lib/syncEngine';
+import {
+  applySyncedWatermarks,
+  formatSyncErrorMessage,
+  mergeAndSyncWithCloud,
+  pruneExpiredTombstones,
+  syncScheduler,
+} from '../lib/syncEngine';
 import { generateSmartBreakdown } from '../lib/taskBreakdown';
 import type {
   ActiveTab,
   BackupData,
+  DailyCategoryFocusMap,
   DailyFocusMap,
   EmojiThemePack,
   FocusSettings,
@@ -156,18 +164,18 @@ function createInitialSeedData(): {
   });
 
   const tasks: Task[] = [
-    // Today starter tasks with Rainbow Bliss vibrancy + sample subtasks
-    makeSeedTask(todayId, 'Study JUnit lesson 14', '💻', '#9364b8', 45, 0, [
-      { id: createUuid(), title: 'Watch lecture video', completed: false },
-      { id: createUuid(), title: 'Take key notes', completed: false },
-      { id: createUuid(), title: 'Write sample unit test', completed: false },
+    // Today starter tasks with generic examples & sample subtasks
+    makeSeedTask(todayId, 'Deep work on main project', '🎯', '#9364b8', 45, 0, [
+      { id: createUuid(), title: 'Outline key steps', completed: false },
+      { id: createUuid(), title: 'Work distraction-free', completed: false },
+      { id: createUuid(), title: 'Quick review & wrap up', completed: false },
     ]),
-    makeSeedTask(todayId, 'Review lecture notes', '📚', '#3aa0b5', 20, 1),
-    makeSeedTask(todayId, 'Quick coffee & eye break', '☕', '#0fa988', 10, 2),
-    makeSeedTask(todayId, 'Clear inbox & messages', '✉️', '#df7a57', 15, 3),
+    makeSeedTask(todayId, 'Read & take quick notes', '📖', '#3aa0b5', 20, 1),
+    makeSeedTask(todayId, 'Coffee & stretch break', '☕', '#0fa988', 10, 2),
+    makeSeedTask(todayId, 'Reply to messages & emails', '✉️', '#df7a57', 15, 3),
 
     // Study starter task
-    makeSeedTask(studyId, 'Summarize chapter & solve practice quiz', '✍️', '#d89b48', 40, 0),
+    makeSeedTask(studyId, 'Summarize key concepts & practice', '✍️', '#d89b48', 40, 0),
 
     // Work starter task
     makeSeedTask(workId, 'Priority email triage & daily plan', '✉️', '#1388ba', 15, 0),
@@ -198,6 +206,7 @@ export interface FocusState {
   tasks: Task[];
   activeListId: string | null;
   dailyFocusSeconds: DailyFocusMap;
+  dailyCategoryFocus: DailyCategoryFocusMap;
 
   // Persisted UI, settings & customization
   theme: ThemeMode;
@@ -225,6 +234,7 @@ export interface FocusState {
   syncStatus: SyncStatus;
   syncError: string | null;
   lastSyncedAt: string | null;
+  lastSyncStats: { upsertedLists: number; upsertedTasks: number } | null;
   pendingSync: boolean;
   storagePersisted: boolean;
 
@@ -343,7 +353,7 @@ function syncAudioEnginePlayback(
 
 function triggerSyncIfLoggedIn(
   get: () => FocusState,
-  set: (partial: Partial<FocusState>) => void,
+  set: (partial: Partial<FocusState> | ((s: FocusState) => Partial<FocusState>)) => void,
 ): void {
   const state = get();
   if (!state.user) return;
@@ -360,12 +370,37 @@ function triggerSyncIfLoggedIn(
       lists: get().lists,
       tasks: get().tasks,
     }),
-    (status, syncedAt, errMsg) => {
+    (status, pushResult, errMsg) => {
+      if (status === 'synced' && pushResult) {
+        const hasStampedUpdates =
+          pushResult.upsertedLists > 0 ||
+          pushResult.upsertedTasks > 0 ||
+          Boolean(pushResult.remappedLists?.size) ||
+          Boolean(pushResult.remappedTasks?.size);
+
+        set((s) => {
+          const stamped = hasStampedUpdates
+            ? applySyncedWatermarks(s.lists, s.tasks, pushResult)
+            : null;
+          return {
+            ...(stamped ? { lists: stamped.lists, tasks: stamped.tasks } : {}),
+            syncStatus: 'synced',
+            syncError: null,
+            pendingSync: false,
+            lastSyncedAt: pushResult.syncedAt,
+            lastSyncStats: {
+              upsertedLists: pushResult.upsertedLists,
+              upsertedTasks: pushResult.upsertedTasks,
+            },
+          };
+        });
+        return;
+      }
+
       set({
         syncStatus: status,
         syncError: errMsg ?? null,
         pendingSync: status === 'offline' || status === 'error',
-        ...(syncedAt ? { lastSyncedAt: syncedAt } : {}),
       });
     },
   );
@@ -378,6 +413,7 @@ export const useFocusStore = create<FocusState>()(
       tasks: INITIAL_SEED.tasks,
       activeListId: INITIAL_SEED.activeListId,
       dailyFocusSeconds: {},
+      dailyCategoryFocus: {},
 
       theme: 'dark',
       settings: DEFAULT_SETTINGS,
@@ -402,6 +438,7 @@ export const useFocusStore = create<FocusState>()(
       syncStatus: 'guest',
       syncError: null,
       lastSyncedAt: null,
+      lastSyncStats: null,
       pendingSync: false,
       storagePersisted: false,
 
@@ -913,11 +950,14 @@ export const useFocusStore = create<FocusState>()(
       },
 
       updateTask: (taskId, patch) => {
+        if (get().isTimerRunning) {
+          get().tickTimer(Date.now());
+        }
         const now = new Date().toISOString();
         set((s) => ({
           tasks: s.tasks.map((t) => {
             if (t.id !== taskId) return t;
-            const nextDuration =
+            const rawDuration =
               patch.duration_seconds !== undefined
                 ? Math.max(60, Math.round(patch.duration_seconds))
                 : t.duration_seconds;
@@ -927,6 +967,7 @@ export const useFocusStore = create<FocusState>()(
                 : patch.duration_seconds !== undefined
                   ? Math.max(60, Math.round(patch.duration_seconds))
                   : t.remaining_seconds;
+            const nextDuration = Math.max(rawDuration, Math.max(0, nextRemaining));
 
             return {
               ...t,
@@ -1505,6 +1546,9 @@ export const useFocusStore = create<FocusState>()(
       },
 
       adjustTaskMinutes: (taskId, deltaMinutes) => {
+        if (get().isTimerRunning) {
+          get().tickTimer(Date.now());
+        }
         const now = new Date().toISOString();
         const deltaSec = deltaMinutes * 60;
         if (deltaSec > 0) get().dismissAlarm();
@@ -1517,9 +1561,10 @@ export const useFocusStore = create<FocusState>()(
               deltaSec < 0
                 ? Math.max(60, t.remaining_seconds + deltaSec)
                 : t.remaining_seconds + deltaSec;
+            const appliedDelta = nextRemaining - t.remaining_seconds;
             const nextDuration = Math.max(
               60,
-              t.duration_seconds + (nextRemaining - t.remaining_seconds),
+              Math.max(nextRemaining, t.duration_seconds + appliedDelta),
             );
             return {
               ...t,
@@ -1685,29 +1730,51 @@ export const useFocusStore = create<FocusState>()(
             (settings.audioAlarm &&
               (settings.audioAlarmContinuous || settings.audioAlarmNag)));
 
-        set((s) => ({
-          tasks: s.tasks.map((t) =>
-            t.id === topTask.id
-              ? {
-                  ...t,
-                  remaining_seconds: nextRemaining,
-                  actual_focused_seconds: t.actual_focused_seconds + effectiveFocusedDelta,
-                  updated_at: nowIso,
-                  is_seed: false,
-                }
-              : t,
-          ),
-          dailyFocusSeconds: {
-            ...s.dailyFocusSeconds,
-            [todayKey]: (s.dailyFocusSeconds[todayKey] ?? 0) + effectiveFocusedDelta,
-          },
-          lastTickAt: shouldStopAtZero ? null : nextLastTick,
-          isTimerRunning: shouldStopAtZero ? false : s.isTimerRunning,
-          focusedSinceLastChimeSec: nextChimeElapsed,
-          lastNagMinuteNotified: nextNagMinute,
-          ...(crossedZero ? { overtimeNotifiedTaskId: topTask.id } : {}),
-          ...(activateAlarm ? { isAlarmActive: true } : {}),
-        }));
+        set((s) => {
+          const prevBucket = s.dailyCategoryFocus[todayKey] ?? { byList: {}, byColor: {} };
+          const listKey = topTask.list_id ?? '__none__';
+          const colorKey = normalizeHex(topTask.color) ?? '__none__';
+
+          return {
+            tasks: s.tasks.map((t) =>
+              t.id === topTask.id
+                ? {
+                    ...t,
+                    remaining_seconds: nextRemaining,
+                    actual_focused_seconds: t.actual_focused_seconds + effectiveFocusedDelta,
+                    updated_at: nowIso,
+                    is_seed: false,
+                  }
+                : t,
+            ),
+            dailyFocusSeconds: {
+              ...s.dailyFocusSeconds,
+              [todayKey]: (s.dailyFocusSeconds[todayKey] ?? 0) + effectiveFocusedDelta,
+            },
+            dailyCategoryFocus:
+              effectiveFocusedDelta > 0
+                ? {
+                    ...s.dailyCategoryFocus,
+                    [todayKey]: {
+                      byList: {
+                        ...prevBucket.byList,
+                        [listKey]: (prevBucket.byList[listKey] ?? 0) + effectiveFocusedDelta,
+                      },
+                      byColor: {
+                        ...prevBucket.byColor,
+                        [colorKey]: (prevBucket.byColor[colorKey] ?? 0) + effectiveFocusedDelta,
+                      },
+                    },
+                  }
+                : s.dailyCategoryFocus,
+            lastTickAt: shouldStopAtZero ? null : nextLastTick,
+            isTimerRunning: shouldStopAtZero ? false : s.isTimerRunning,
+            focusedSinceLastChimeSec: nextChimeElapsed,
+            lastNagMinuteNotified: nextNagMinute,
+            ...(crossedZero ? { overtimeNotifiedTaskId: topTask.id } : {}),
+            ...(activateAlarm ? { isAlarmActive: true } : {}),
+          };
+        });
       },
 
       toggleTheme: () => {
@@ -1793,14 +1860,17 @@ export const useFocusStore = create<FocusState>()(
             activeListId: nextActiveId,
             syncStatus: 'synced',
             lastSyncedAt: merged.syncedAt,
+            lastSyncStats: {
+              upsertedLists: merged.upsertedLists,
+              upsertedTasks: merged.upsertedTasks,
+            },
             pendingSync: false,
             syncError: null,
           });
         } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Cloud sync failed';
           set({
             syncStatus: 'error',
-            syncError: msg,
+            syncError: formatSyncErrorMessage(err),
             pendingSync: true,
           });
         }
@@ -1817,6 +1887,7 @@ export const useFocusStore = create<FocusState>()(
             tasks: freshSeed.tasks,
             activeListId: freshSeed.activeListId,
             dailyFocusSeconds: {},
+            dailyCategoryFocus: {},
             activeTab: 'list',
             isTimerRunning: false,
             lastTickAt: null,
@@ -1825,6 +1896,7 @@ export const useFocusStore = create<FocusState>()(
             syncStatus: 'guest',
             syncError: null,
             lastSyncedAt: null,
+            lastSyncStats: null,
             pendingSync: false,
           });
         } else {
@@ -1841,6 +1913,7 @@ export const useFocusStore = create<FocusState>()(
                 ...l,
                 id: newId,
                 user_id: undefined,
+                synced_updated_at: undefined,
                 updated_at: now,
                 is_seed: false,
               };
@@ -1852,6 +1925,7 @@ export const useFocusStore = create<FocusState>()(
               ...t,
               id: createUuid(),
               user_id: undefined,
+              synced_updated_at: undefined,
               list_id: t.list_id ? (listIdMap.get(t.list_id) ?? null) : null,
               updated_at: now,
               is_seed: false,
@@ -1872,6 +1946,7 @@ export const useFocusStore = create<FocusState>()(
             syncStatus: 'guest',
             syncError: null,
             lastSyncedAt: null,
+            lastSyncStats: null,
             pendingSync: false,
           });
         }
@@ -1906,23 +1981,27 @@ export const useFocusStore = create<FocusState>()(
             activeListId: nextActiveId,
             syncStatus: 'synced',
             lastSyncedAt: merged.syncedAt,
+            lastSyncStats: {
+              upsertedLists: merged.upsertedLists,
+              upsertedTasks: merged.upsertedTasks,
+            },
             pendingSync: false,
             syncError: null,
           });
         } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Sync error';
-          set({ syncStatus: 'error', syncError: msg, pendingSync: true });
+          set({ syncStatus: 'error', syncError: formatSyncErrorMessage(err), pendingSync: true });
         }
       },
 
       exportBackupJson: () => {
         const state = get();
         return {
-          version: 2,
+          version: 3,
           exportedAt: new Date().toISOString(),
           lists: state.lists.filter((l) => !l.deleted_at),
           tasks: state.tasks.filter((t) => !t.deleted_at),
           dailyFocusSeconds: state.dailyFocusSeconds,
+          dailyCategoryFocus: state.dailyCategoryFocus,
           activeListId: state.activeListId,
           settings: state.settings,
           customEmojiThemes: state.customEmojiThemes,
@@ -1984,11 +2063,12 @@ export const useFocusStore = create<FocusState>()(
             lists: cleanLists,
             tasks: cleanTasks,
             dailyFocusSeconds: data.dailyFocusSeconds ?? {},
+            dailyCategoryFocus: data.dailyCategoryFocus ?? {},
             activeListId: nextActive,
             isTimerRunning: false,
             lastTickAt: null,
             activeTab: 'list',
-            settings: data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : s.settings,
+            settings: data.settings ? { ...DEFAULT_SETTINGS, ...data.settings, ambientGlow: false } : s.settings,
             customEmojiThemes: Array.isArray(data.customEmojiThemes)
               ? data.customEmojiThemes
               : s.customEmojiThemes,
@@ -2006,10 +2086,25 @@ export const useFocusStore = create<FocusState>()(
             mergedDaily[k] = Math.max(mergedDaily[k] ?? 0, Number(v) || 0);
           }
 
+          const mergedCategory: DailyCategoryFocusMap = { ...state.dailyCategoryFocus };
+          for (const [dateKey, bucket] of Object.entries(data.dailyCategoryFocus ?? {})) {
+            const cur = mergedCategory[dateKey] ?? { byList: {}, byColor: {} };
+            const byList = { ...cur.byList };
+            const byColor = { ...cur.byColor };
+            for (const [lk, lv] of Object.entries(bucket.byList ?? {})) {
+              byList[lk] = Math.max(byList[lk] ?? 0, Number(lv) || 0);
+            }
+            for (const [ck, cv] of Object.entries(bucket.byColor ?? {})) {
+              byColor[ck] = Math.max(byColor[ck] ?? 0, Number(cv) || 0);
+            }
+            mergedCategory[dateKey] = { byList, byColor };
+          }
+
           set({
             lists: Array.from(listMap.values()),
             tasks: Array.from(taskMap.values()),
             dailyFocusSeconds: mergedDaily,
+            dailyCategoryFocus: mergedCategory,
           });
         }
 
@@ -2075,18 +2170,32 @@ export const useFocusStore = create<FocusState>()(
       name: 'morjon-focus-storage-v1',
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<FocusState>;
+        const rawTasks = Array.isArray(persisted.tasks)
+          ? pruneExpiredTombstones(persisted.tasks)
+          : currentState.tasks;
+        const migratedTasks = rawTasks.map((t) =>
+          t.is_seed && t.title === 'Study JUnit lesson 14'
+            ? { ...t, title: 'Deep work on main project', emoji: '🎯' }
+            : t,
+        );
+
         return {
           ...currentState,
           ...persisted,
           lists: Array.isArray(persisted.lists)
             ? pruneExpiredTombstones(persisted.lists)
             : currentState.lists,
-          tasks: Array.isArray(persisted.tasks)
-            ? pruneExpiredTombstones(persisted.tasks)
-            : currentState.tasks,
+          tasks: migratedTasks,
+          dailyCategoryFocus:
+            persisted.dailyCategoryFocus && typeof persisted.dailyCategoryFocus === 'object'
+              ? persisted.dailyCategoryFocus
+              : currentState.dailyCategoryFocus,
           settings: {
             ...DEFAULT_SETTINGS,
             ...(persisted.settings ?? {}),
+            ambientGlow: false,
+            dailyGoalMinutes:
+              persisted.settings?.dailyGoalMinutes ?? DEFAULT_SETTINGS.dailyGoalMinutes,
           },
           customEmojiThemes: Array.isArray(persisted.customEmojiThemes)
             ? persisted.customEmojiThemes
@@ -2098,6 +2207,7 @@ export const useFocusStore = create<FocusState>()(
         tasks: state.tasks,
         activeListId: state.activeListId,
         dailyFocusSeconds: state.dailyFocusSeconds,
+        dailyCategoryFocus: state.dailyCategoryFocus,
         theme: state.theme,
         settings: state.settings,
         soundscape: state.soundscape,

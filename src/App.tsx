@@ -339,17 +339,6 @@ export function App() {
 
   const bgStyle: React.CSSProperties = {
     backgroundColor: isDark ? surface.darkBg : surface.lightBg,
-    ...(settings.ambientGlow
-      ? {
-          backgroundImage: `radial-gradient(780px circle at 18% 8%, ${hexToRgba(
-            surface.glowColors[0],
-            isDark ? 0.2 : 0.14,
-          )}, transparent 58%), radial-gradient(640px circle at 88% 88%, ${hexToRgba(
-            surface.glowColors[1],
-            isDark ? 0.16 : 0.12,
-          )}, transparent 55%)`,
-        }
-      : {}),
   };
 
   const navPosition = settings.navbarPosition;
@@ -410,7 +399,11 @@ export function App() {
         <main className="flex-1 min-w-0 overflow-y-auto">
           <div
             className={`mx-auto w-full px-3 sm:px-6 py-4 sm:py-6 space-y-4 pb-24 ${
-              activeTab === 'split' ? 'max-w-6xl' : 'max-w-2xl'
+              activeTab === 'split'
+                ? 'max-w-6xl'
+                : activeTab === 'completed'
+                  ? 'max-w-4xl'
+                  : 'max-w-2xl'
             }`}
           >
             {/* Visual Alarm Dismiss Pill */}

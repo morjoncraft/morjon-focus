@@ -118,18 +118,6 @@ export const HeroTimer: React.FC<HeroTimerProps> = ({
   const overtimeSeconds = isOvertime ? Math.abs(activeTask.remaining_seconds) : 0;
 
   const remainingClamped = Math.max(0, activeTask.remaining_seconds);
-  const progressPct =
-    activeTask.duration_seconds > 0
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            ((activeTask.duration_seconds - remainingClamped) / activeTask.duration_seconds) *
-              100,
-          ),
-        )
-      : 100;
-
   const remainingFraction =
     activeTask.duration_seconds > 0
       ? Math.max(0, Math.min(1, remainingClamped / activeTask.duration_seconds))
@@ -152,15 +140,11 @@ export const HeroTimer: React.FC<HeroTimerProps> = ({
   const heroSurfaceStyle: React.CSSProperties = isOvertime
     ? {
         borderColor: 'rgba(244, 63, 94, 0.55)',
-        backgroundImage: isDark
-          ? 'linear-gradient(145deg, rgba(136, 19, 55, 0.34), rgba(24, 24, 27, 0.92))'
-          : 'linear-gradient(145deg, rgba(255, 228, 230, 0.85), rgba(255, 255, 255, 0.96))',
+        backgroundColor: isDark ? 'rgba(136, 19, 55, 0.22)' : 'rgba(255, 228, 230, 0.78)',
       }
     : {
         borderColor: hexToRgba(accentHex, isDark ? 0.42 : 0.35),
-        backgroundImage: isDark
-          ? `linear-gradient(145deg, ${hexToRgba(accentHex, 0.22)}, rgba(28, 30, 38, 0.94) 65%)`
-          : `linear-gradient(145deg, ${hexToRgba(accentHex, 0.14)}, rgba(255, 255, 255, 0.98) 70%)`,
+        backgroundColor: isDark ? hexToRgba(accentHex, 0.11) : hexToRgba(accentHex, 0.08),
       };
 
   const handleComplete = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -311,17 +295,6 @@ export const HeroTimer: React.FC<HeroTimerProps> = ({
       style={heroSurfaceStyle}
       className={`relative border shadow-sm transition-colors duration-300 ${cornerClass}`}
     >
-      {/* Top Progress Bar */}
-      <div className="h-1.5 w-full overflow-hidden rounded-t-2xl bg-zinc-200/70 dark:bg-zinc-800/90">
-        <div
-          className={`h-full transition-all duration-300 ${isOvertime ? 'animate-overtime-pulse' : ''}`}
-          style={{
-            width: `${isOvertime ? 100 : progressPct}%`,
-            backgroundColor: isOvertime ? '#f43f5e' : ringHex,
-          }}
-        />
-      </div>
-
       <div className="p-4 sm:p-6">
         {/* Active task label + status pill */}
         <div className="flex items-start justify-between gap-3">

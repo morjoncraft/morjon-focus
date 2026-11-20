@@ -11,7 +11,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { hexToRgba, normalizeHex } from '../lib/colors';
+import { SURFACE_THEMES, normalizeHex } from '../lib/colors';
 import { fireTaskCompleteConfetti } from '../lib/confetti';
 import { formatTimer } from '../lib/formatters';
 import { t } from '../lib/i18n';
@@ -51,6 +51,7 @@ export const ZenModeOverlay: React.FC<ZenModeOverlayProps> = ({ activeTask }) =>
 
   const lang = settings.language;
   const isDark = theme === 'dark';
+  const surface = SURFACE_THEMES[settings.surfaceTheme] ?? SURFACE_THEMES['llama-slate'];
   const accentHex =
     (activeTask && normalizeHex(activeTask.color)) || settings.accentColor;
   const isOvertime = activeTask ? activeTask.remaining_seconds < 0 : false;
@@ -80,11 +81,7 @@ export const ZenModeOverlay: React.FC<ZenModeOverlayProps> = ({ activeTask }) =>
     <div
       className="fixed inset-0 z-50 flex flex-col justify-between overflow-y-auto p-5 sm:p-8 animate-fade-slide"
       style={{
-        backgroundColor: isDark ? '#12141b' : '#f4f6fb',
-        backgroundImage: `radial-gradient(680px circle at 50% 42%, ${hexToRgba(
-          isOvertime ? '#f43f5e' : accentHex,
-          isDark ? 0.24 : 0.16,
-        )}, transparent 68%)`,
+        backgroundColor: isDark ? surface.darkBg : surface.lightBg,
       }}
     >
       {/* Top Minimal Bar */}
@@ -138,15 +135,8 @@ export const ZenModeOverlay: React.FC<ZenModeOverlayProps> = ({ activeTask }) =>
               {activeTask.title}
             </h1>
 
-            {/* Breathing Circle Ring */}
+            {/* Clean Circle Ring */}
             <div className="relative my-7 flex items-center justify-center">
-              <div
-                className={`absolute inset-4 rounded-full blur-2xl transition-opacity duration-1000 ${
-                  isTimerRunning ? 'opacity-45 animate-pulse' : 'opacity-15'
-                }`}
-                style={{ backgroundColor: isOvertime ? '#f43f5e' : accentHex }}
-              />
-
               <svg width={280} height={280} viewBox="0 0 280 280" className="-rotate-90 relative">
                 <circle
                   cx={140}
